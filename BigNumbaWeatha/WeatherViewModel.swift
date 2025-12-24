@@ -29,6 +29,52 @@ class WeatherViewModel: ObservableObject {
     private let currentCityKey = "currentCity"
     private let temperatureUnitKey = "temperatureUnit"
     
+    // MARK: - Preset Cities
+    
+    /// Major cities available for quick selection
+    static let presetCities: [SavedCity] = [
+        // North America
+        SavedCity(name: "Toronto", region: "ON", country: "Canada", latitude: 43.6532, longitude: -79.3832),
+        SavedCity(name: "New York", region: "NY", country: "United States", latitude: 40.7128, longitude: -74.0060),
+        SavedCity(name: "Los Angeles", region: "CA", country: "United States", latitude: 34.0522, longitude: -118.2437),
+        SavedCity(name: "Chicago", region: "IL", country: "United States", latitude: 41.8781, longitude: -87.6298),
+        SavedCity(name: "Vancouver", region: "BC", country: "Canada", latitude: 49.2827, longitude: -123.1207),
+        SavedCity(name: "Montreal", region: "QC", country: "Canada", latitude: 45.5017, longitude: -73.5673),
+        SavedCity(name: "Mexico City", region: "CDMX", country: "Mexico", latitude: 19.4326, longitude: -99.1332),
+        
+        // Europe
+        SavedCity(name: "London", region: "England", country: "United Kingdom", latitude: 51.5074, longitude: -0.1278),
+        SavedCity(name: "Paris", region: "Île-de-France", country: "France", latitude: 48.8566, longitude: 2.3522),
+        SavedCity(name: "Berlin", region: "Berlin", country: "Germany", latitude: 52.5200, longitude: 13.4050),
+        SavedCity(name: "Madrid", region: "Madrid", country: "Spain", latitude: 40.4168, longitude: -3.7038),
+        SavedCity(name: "Rome", region: "Lazio", country: "Italy", latitude: 41.9028, longitude: 12.4964),
+        SavedCity(name: "Amsterdam", region: "North Holland", country: "Netherlands", latitude: 52.3676, longitude: 4.9041),
+        SavedCity(name: "Warsaw", region: "Masovian", country: "Poland", latitude: 52.2297, longitude: 21.0122),
+        SavedCity(name: "Vienna", region: "Vienna", country: "Austria", latitude: 48.2082, longitude: 16.3738),
+        SavedCity(name: "Prague", region: "Prague", country: "Czech Republic", latitude: 50.0755, longitude: 14.4378),
+        SavedCity(name: "Stockholm", region: "Stockholm", country: "Sweden", latitude: 59.3293, longitude: 18.0686),
+        SavedCity(name: "Copenhagen", region: "Capital Region", country: "Denmark", latitude: 55.6761, longitude: 12.5683),
+        SavedCity(name: "Dublin", region: "Leinster", country: "Ireland", latitude: 53.3498, longitude: -6.2603),
+        SavedCity(name: "Lisbon", region: "Lisbon", country: "Portugal", latitude: 38.7223, longitude: -9.1393),
+        SavedCity(name: "Brussels", region: "Brussels", country: "Belgium", latitude: 50.8503, longitude: 4.3517),
+        SavedCity(name: "Zurich", region: "Zurich", country: "Switzerland", latitude: 47.3769, longitude: 8.5417),
+        SavedCity(name: "Barcelona", region: "Catalonia", country: "Spain", latitude: 41.3851, longitude: 2.1734),
+        SavedCity(name: "Munich", region: "Bavaria", country: "Germany", latitude: 48.1351, longitude: 11.5820),
+        SavedCity(name: "Milan", region: "Lombardy", country: "Italy", latitude: 45.4642, longitude: 9.1900),
+        SavedCity(name: "Athens", region: "Attica", country: "Greece", latitude: 37.9838, longitude: 23.7275),
+        SavedCity(name: "Budapest", region: "Budapest", country: "Hungary", latitude: 47.4979, longitude: 19.0402),
+        SavedCity(name: "Helsinki", region: "Uusimaa", country: "Finland", latitude: 60.1699, longitude: 24.9384),
+        SavedCity(name: "Oslo", region: "Oslo", country: "Norway", latitude: 59.9139, longitude: 10.7522),
+        
+        // Asia & Pacific
+        SavedCity(name: "Tokyo", region: "Tokyo", country: "Japan", latitude: 35.6762, longitude: 139.6503),
+        SavedCity(name: "Sydney", region: "NSW", country: "Australia", latitude: -33.8688, longitude: 151.2093),
+        SavedCity(name: "Singapore", region: "Singapore", country: "Singapore", latitude: 1.3521, longitude: 103.8198),
+        SavedCity(name: "Hong Kong", region: "Hong Kong", country: "China", latitude: 22.3193, longitude: 114.1694),
+        SavedCity(name: "Seoul", region: "Seoul", country: "South Korea", latitude: 37.5665, longitude: 126.9780),
+        SavedCity(name: "Dubai", region: "Dubai", country: "UAE", latitude: 25.2048, longitude: 55.2708),
+    ]
+    
     // MARK: - Initialization
     
     init() {

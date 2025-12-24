@@ -202,12 +202,14 @@ struct TodayWeatherCard: View {
             // City with dropdown indicator
             Button(action: onCityTap) {
                 HStack(spacing: 6) {
-                    // Only show maple leaf for Canadian cities
+                    // Show country emoji for special countries
                     if city.isInCanada {
                         Text("🍁")
+                    } else if city.isInPoland {
+                        Text("🥒")
                     }
                     
-                    Text("\(city.name), \(city.region)")
+                    Text(city.displayName)
                         .foregroundColor(.primary)
                     
                     // Dropdown indicator with custom colors
@@ -330,13 +332,25 @@ struct LoadingCard: View {
     }
 }
 
-// MARK: - City Picker Sheet (basic implementation for future expansion)
+// MARK: - City Picker Sheet
 
 struct CityPickerSheet: View {
     @ObservedObject var viewModel: WeatherViewModel
     @Environment(\.dismiss) var dismiss
     @State private var searchText = ""
-    @State private var searchResults: [SavedCity] = []
+    
+    /// Filter preset cities based on search text
+    var filteredCities: [SavedCity] {
+        if searchText.isEmpty {
+            return WeatherViewModel.presetCities
+        } else {
+            return WeatherViewModel.presetCities.filter { city in
+                city.name.localizedCaseInsensitiveContains(searchText) ||
+                city.country.localizedCaseInsensitiveContains(searchText) ||
+                city.region.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
     
     var body: some View {
         NavigationView {
@@ -345,46 +359,34 @@ struct CityPickerSheet: View {
                 Section {
                     TextField("Search cities...", text: $searchText)
                         .textFieldStyle(.roundedBorder)
-                        .onChange(of: searchText) { newValue in
+                }
+                
+                // Cities list (filtered by search)
+                Section(searchText.isEmpty ? "All Cities" : "Results") {
+                    ForEach(filteredCities) { city in
+                        Button {
                             Task {
-                                if newValue.count >= 2 {
-                                    searchResults = await viewModel.searchCities(query: newValue)
-                                } else {
-                                    searchResults = []
-                                }
+                                await viewModel.selectCity(city)
+                                dismiss()
                             }
-                        }
-                }
-                
-                // Search results
-                if !searchResults.isEmpty {
-                    Section("Search Results") {
-                        ForEach(searchResults) { city in
-                            Button {
-                                Task {
-                                    await viewModel.selectCity(city)
-                                    dismiss()
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(city.name)
+                                        .foregroundColor(.primary)
+                                    Text(city.country)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                            } label: {
-                                Text(city.displayName)
-                                    .foregroundColor(.primary)
-                            }
-                        }
-                    }
-                }
-                
-                // Saved cities
-                if !viewModel.savedCities.isEmpty {
-                    Section("Saved Cities") {
-                        ForEach(viewModel.savedCities) { city in
-                            Button {
-                                Task {
-                                    await viewModel.selectCity(city)
-                                    dismiss()
+                                
+                                Spacer()
+                                
+                                // Show checkmark for current city
+                                if city.name == viewModel.currentCity.name && 
+                                   city.country == viewModel.currentCity.country {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.blue)
                                 }
-                            } label: {
-                                Text(city.displayName)
-                                    .foregroundColor(.primary)
                             }
                         }
                     }

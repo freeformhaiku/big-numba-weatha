@@ -92,7 +92,25 @@ struct SavedCity: Identifiable, Codable, Equatable {
     }
     
     var displayName: String {
-        "\(name), \(region)"
+        // For cities where region equals city name (e.g., "Berlin, Berlin"), 
+        // or where country is more recognizable than region, show country instead
+        if region == name || shouldShowCountry {
+            return "\(name), \(country)"
+        }
+        return "\(name), \(region)"
+    }
+    
+    /// Returns true if this city should display country instead of region
+    /// (for places where the region name is less recognizable than the country)
+    private var shouldShowCountry: Bool {
+        // European countries where region names aren't commonly known
+        let countriesWhereCountryIsClearer = [
+            "Poland", "Austria", "Czech Republic", "Sweden", "Denmark",
+            "Ireland", "Portugal", "Belgium", "Switzerland", "Greece",
+            "Hungary", "Finland", "Norway", "Netherlands", "Italy",
+            "Spain", "France", "Germany"
+        ]
+        return countriesWhereCountryIsClearer.contains(country)
     }
     
     /// Returns true if this city is in Canada
@@ -111,6 +129,11 @@ struct SavedCity: Identifiable, Codable, Equatable {
         region == "NT" || region == "Northwest Territories" ||
         region == "YT" || region == "Yukon" ||
         region == "NU" || region == "Nunavut"
+    }
+    
+    /// Returns true if this city is in Poland 🥒
+    var isInPoland: Bool {
+        country.lowercased() == "poland"
     }
 }
 

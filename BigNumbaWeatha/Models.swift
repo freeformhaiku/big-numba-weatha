@@ -71,6 +71,20 @@ enum WeatherCondition: String, CaseIterable {
     var iconName: String {
         return WeatherCondition.useCustomIcons ? customIconName : sfSymbolName
     }
+    
+    /// Human-readable name for display in the UI
+    var displayName: String {
+        switch self {
+        case .sunny:       return "Sunny"
+        case .cloudy:      return "Cloudy"
+        case .partlyCloudy: return "Partly cloudy"
+        case .rainy:       return "Rainy"
+        case .snowy:       return "Snowy"
+        case .sleet:       return "Rain & sleet"
+        case .stormy:      return "Stormy"
+        case .foggy:       return "Foggy"
+        }
+    }
 }
 
 /// Represents a saved city

@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D50A59A22EFBABF7007908B9 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50A59A12EFBABF7007908B9 /* HomeScreen.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		D50A59452EFB4F48007908B9 /* BigNumbaWeatha.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BigNumbaWeatha.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D50A59A12EFBABF7007908B9 /* HomeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreen.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +39,7 @@
 			children = (
 				D50A59472EFB4F48007908B9 /* BigNumbaWeatha */,
 				D50A59462EFB4F48007908B9 /* Products */,
+				D50A59A12EFBABF7007908B9 /* HomeScreen.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -120,6 +126,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D50A59A22EFBABF7007908B9 /* HomeScreen.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

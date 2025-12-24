@@ -39,10 +39,15 @@ struct HomeScreen: View {
                     
                     // Header with title and unit toggle
                     ZStack {
-                        // Centered title
-                        Text("big numba weatha")
-                            .font(.title2)
-                            .fontWeight(.medium)
+                        // Centered title with app icon
+                        HStack(spacing: 8) {
+                            Image("app-icon-small")
+                                .resizable()
+                                .frame(width: 24, height: 24)
+                            Text("big numba weatha")
+                                .font(.title2)
+                                .fontWeight(.medium)
+                        }
                         
                         // Right-aligned unit button
                         HStack {
@@ -74,6 +79,7 @@ struct HomeScreen: View {
                     if let today = viewModel.todayWeather {
                         TodayWeatherCard(
                             weather: today,
+                            yesterdayWeather: viewModel.yesterdayWeather,
                             city: viewModel.currentCity,
                             unit: viewModel.temperatureUnit,
                             onCityTap: { showCityPicker = true }
@@ -170,9 +176,41 @@ struct RoundedCorner: Shape {
 
 struct TodayWeatherCard: View {
     let weather: DayWeather
+    let yesterdayWeather: DayWeather?
     let city: SavedCity
     let unit: TemperatureUnit
     let onCityTap: () -> Void
+    
+    /// Generates the comparison text like "2 degrees cooler than yesterday"
+    /// Compares the average temperature (high + low / 2) of today vs yesterday
+    var comparisonText: String? {
+        guard let yesterday = yesterdayWeather else { return nil }
+        
+        // Calculate average temps for a more accurate "feel" comparison
+        let todayAverage = Double(weather.highTemp + weather.lowTemp) / 2.0
+        let yesterdayAverage = Double(yesterday.highTemp + yesterday.lowTemp) / 2.0
+        let difference = todayAverage - yesterdayAverage
+        
+        // Round to nearest 0.5 for display, but show as integer if it's a whole number
+        let roundedDiff = (difference * 2).rounded() / 2  // Rounds to nearest 0.5
+        
+        if abs(roundedDiff) < 0.5 {
+            return "Same as yesterday"
+        } else if roundedDiff > 0 {
+            let displayDiff = roundedDiff.truncatingRemainder(dividingBy: 1) == 0 
+                ? String(format: "%.0f", roundedDiff) 
+                : String(format: "%.1f", roundedDiff)
+            let degreeWord = abs(roundedDiff) == 1 ? "degree" : "degrees"
+            return "\(displayDiff) \(degreeWord) warmer than yesterday"
+        } else {
+            let absDiff = abs(roundedDiff)
+            let displayDiff = absDiff.truncatingRemainder(dividingBy: 1) == 0 
+                ? String(format: "%.0f", absDiff) 
+                : String(format: "%.1f", absDiff)
+            let degreeWord = absDiff == 1 ? "degree" : "degrees"
+            return "\(displayDiff) \(degreeWord) cooler than yesterday"
+        }
+    }
     
     var body: some View {
         VStack(spacing: 12) {
@@ -198,6 +236,20 @@ struct TodayWeatherCard: View {
                     .foregroundColor(.primary)
             }
             .font(.title3)
+            
+            // Weather condition and comparison
+            HStack(spacing: 6) {
+                Text(weather.condition.displayName)
+                    .foregroundColor(.secondary)
+                
+                if let comparison = comparisonText {
+                    Text("•")
+                        .foregroundColor(.secondary)
+                    Text(comparison)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .font(.subheadline)
             
             // City with dropdown indicator
             Button(action: onCityTap) {
@@ -250,6 +302,11 @@ struct SecondaryWeatherCard: View {
             // Weather icon - fixed frame for consistent card heights
             WeatherIcon(condition: weather.condition)
                 .frame(width: 40, height: 40)
+            
+            // Weather condition label
+            Text(weather.condition.displayName)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
             
             // High / Low
             HStack(spacing: 12) {

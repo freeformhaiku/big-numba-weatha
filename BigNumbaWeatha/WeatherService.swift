@@ -39,6 +39,7 @@ class WeatherService {
             URLQueryItem(name: "latitude", value: String(city.latitude)),
             URLQueryItem(name: "longitude", value: String(city.longitude)),
             URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weathercode"),
+            URLQueryItem(name: "hourly", value: "temperature_2m"),
             URLQueryItem(name: "current_weather", value: "true"),
             URLQueryItem(name: "temperature_unit", value: unit.apiValue),
             URLQueryItem(name: "timezone", value: "auto"),
@@ -63,8 +64,11 @@ class WeatherService {
         let decoder = JSONDecoder()
         let weatherResponse = try decoder.decode(WeatherAPIResponse.self, from: data)
         
+        // Parse hourly data for each day
+        let hourlyByDay = parseHourlyData(weatherResponse.hourly, dates: [yesterday, today, tomorrow])
+        
         // Convert API response to our app models
-        let weatherDays = try parseWeatherResponse(weatherResponse, dates: [yesterday, today, tomorrow])
+        let weatherDays = try parseWeatherResponse(weatherResponse, dates: [yesterday, today, tomorrow], hourlyByDay: hourlyByDay)
         
         guard weatherDays.count >= 3 else {
             throw WeatherError.insufficientData
@@ -78,7 +82,8 @@ class WeatherService {
                 highTemp: todayWeather.highTemp,
                 lowTemp: todayWeather.lowTemp,
                 currentTemp: Int(currentWeather.temperature.rounded()),
-                condition: todayWeather.condition
+                condition: todayWeather.condition,
+                hourlyTemps: todayWeather.hourlyTemps
             )
         }
         
@@ -120,7 +125,48 @@ class WeatherService {
     
     // MARK: - Private Helpers
     
-    private func parseWeatherResponse(_ response: WeatherAPIResponse, dates: [Date]) throws -> [DayWeather] {
+    /// Parses hourly data and groups it by day
+    private func parseHourlyData(_ hourly: HourlyWeather?, dates: [Date]) -> [[HourlyTemp]] {
+        guard let hourly = hourly else {
+            return dates.map { _ in [] }
+        }
+        
+        let calendar = Calendar.current
+        var hourlyByDay: [[HourlyTemp]] = dates.map { _ in [] }
+        
+        // Parse the hourly time strings and temperatures
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+        
+        for (index, timeString) in hourly.time.enumerated() {
+            guard index < hourly.temperature.count else { break }
+            
+            // Parse the ISO8601 time string (e.g., "2024-12-24T09:00")
+            if let date = dateFormatter.date(from: timeString + ":00") ?? parseDateFallback(timeString) {
+                let hour = calendar.component(.hour, from: date)
+                let temp = hourly.temperature[index]
+                
+                // Find which day this hour belongs to
+                for (dayIndex, dayDate) in dates.enumerated() {
+                    if calendar.isDate(date, inSameDayAs: dayDate) {
+                        hourlyByDay[dayIndex].append(HourlyTemp(hour: hour, temp: temp))
+                        break
+                    }
+                }
+            }
+        }
+        
+        return hourlyByDay
+    }
+    
+    /// Fallback date parser for hourly time strings
+    private func parseDateFallback(_ timeString: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        return formatter.date(from: timeString)
+    }
+    
+    private func parseWeatherResponse(_ response: WeatherAPIResponse, dates: [Date], hourlyByDay: [[HourlyTemp]]) throws -> [DayWeather] {
         let daily = response.daily
         
         guard daily.time.count >= 3,
@@ -136,7 +182,8 @@ class WeatherService {
                 highTemp: Int(daily.temperatureMax[index].rounded()),
                 lowTemp: Int(daily.temperatureMin[index].rounded()),
                 currentTemp: nil,
-                condition: mapWeatherCode(daily.weathercode[index])
+                condition: mapWeatherCode(daily.weathercode[index]),
+                hourlyTemps: index < hourlyByDay.count ? hourlyByDay[index] : []
             )
         }
     }

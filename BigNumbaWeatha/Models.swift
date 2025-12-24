@@ -27,6 +27,14 @@ struct DayWeather: Identifiable {
     let lowTemp: Int
     let currentTemp: Int?  // Only available for today
     let condition: WeatherCondition
+    let hourlyTemps: [HourlyTemp]  // Hourly temperature data for the chart
+}
+
+/// Represents temperature at a specific hour
+struct HourlyTemp: Identifiable {
+    let id = UUID()
+    let hour: Int      // 0-23
+    let temp: Double   // Temperature value
 }
 
 /// Weather conditions with associated icons
@@ -160,11 +168,13 @@ struct WeatherAPIResponse: Codable {
     let timezone: String
     let currentWeather: CurrentWeather?
     let daily: DailyWeather
+    let hourly: HourlyWeather?
     
     enum CodingKeys: String, CodingKey {
         case latitude, longitude, timezone
         case currentWeather = "current_weather"
         case daily
+        case hourly
     }
 }
 
@@ -184,6 +194,16 @@ struct DailyWeather: Codable {
         case temperatureMax = "temperature_2m_max"
         case temperatureMin = "temperature_2m_min"
         case weathercode
+    }
+}
+
+struct HourlyWeather: Codable {
+    let time: [String]
+    let temperature: [Double]
+    
+    enum CodingKeys: String, CodingKey {
+        case time
+        case temperature = "temperature_2m"
     }
 }
 

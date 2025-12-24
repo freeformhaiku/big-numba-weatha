@@ -2,12 +2,14 @@ import SwiftUI
 
 // MARK: - Custom Colors
 extension Color {
-    static let unitSelectedText = Color(red: 0x3D/255, green: 0x3F/255, blue: 0xD0/255)  // #3D3FD0
-    static let unitSelectedCheck = Color(red: 0x6A/255, green: 0x6C/255, blue: 0xFF/255)  // #6A6CFF
-    static let chevronBackground = Color(red: 0xE5/255, green: 0xE5/255, blue: 0xE5/255)  // #E5E5E5
-    static let chevronIcon = Color(red: 0x7A/255, green: 0x7A/255, blue: 0x7A/255)        // #7A7A7A
-    static let unitButtonBackground = Color(red: 0xE5/255, green: 0xE5/255, blue: 0xE5/255)  // #E5E5E5
-    static let unitButtonPressed = Color(red: 0xD2/255, green: 0xD2/255, blue: 0xD2/255)     // #D2D2D2
+    static let unitSelectedText = Color(red: 61.0/255.0, green: 63.0/255.0, blue: 208.0/255.0)    // #3D3FD0
+    static let unitSelectedCheck = Color(red: 106.0/255.0, green: 108.0/255.0, blue: 255.0/255.0) // #6A6CFF
+    static let chevronBackground = Color(red: 229.0/255.0, green: 229.0/255.0, blue: 229.0/255.0) // #E5E5E5
+    static let chevronIcon = Color(red: 122.0/255.0, green: 122.0/255.0, blue: 122.0/255.0)       // #7A7A7A
+    static let unitButtonBackground = Color(red: 229.0/255.0, green: 229.0/255.0, blue: 229.0/255.0) // #E5E5E5
+    static let unitButtonPressed = Color(red: 210.0/255.0, green: 210.0/255.0, blue: 210.0/255.0)    // #D2D2D2
+    static let chartStroke = Color(red: 121.0/255.0, green: 75.0/255.0, blue: 196.0/255.0)        // #794BC4
+    static let chartFill = Color(red: 228.0/255.0, green: 197.0/255.0, blue: 255.0/255.0)         // #E4C5FF
 }
 
 // MARK: - Pressable Button Style
@@ -103,6 +105,17 @@ struct HomeScreen: View {
                         } else if viewModel.isLoading {
                             LoadingCard(height: 140)
                         }
+                    }
+                    
+                    // MARK: - Temp by Hour (3-day) Chart
+                    if let yesterday = viewModel.yesterdayWeather,
+                       let today = viewModel.todayWeather,
+                       let tomorrow = viewModel.tomorrowWeather {
+                        ThreeDayHourlyChart(
+                            yesterday: yesterday,
+                            today: today,
+                            tomorrow: tomorrow
+                        )
                     }
                     
                     // MARK: - My Cities Section (placeholder for future)
@@ -458,6 +471,247 @@ struct CityPickerSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Three Day Hourly Chart (72-hour continuous)
+
+struct ThreeDayHourlyChart: View {
+    let yesterday: DayWeather
+    let today: DayWeather
+    let tomorrow: DayWeather
+    
+    /// Combine all hourly temps into a single 72-hour array
+    private var allHourlyTemps: [(dayIndex: Int, hour: Int, temp: Double)] {
+        var temps: [(dayIndex: Int, hour: Int, temp: Double)] = []
+        
+        // Day 0 = Yesterday, Day 1 = Today, Day 2 = Tomorrow
+        for hourlyTemp in yesterday.hourlyTemps {
+            temps.append((dayIndex: 0, hour: hourlyTemp.hour, temp: hourlyTemp.temp))
+        }
+        for hourlyTemp in today.hourlyTemps {
+            temps.append((dayIndex: 1, hour: hourlyTemp.hour, temp: hourlyTemp.temp))
+        }
+        for hourlyTemp in tomorrow.hourlyTemps {
+            temps.append((dayIndex: 2, hour: hourlyTemp.hour, temp: hourlyTemp.temp))
+        }
+        
+        // Sort by day and hour
+        return temps.sorted { 
+            if $0.dayIndex != $1.dayIndex {
+                return $0.dayIndex < $1.dayIndex
+            }
+            return $0.hour < $1.hour
+        }
+    }
+    
+    /// Get min and max temps for scaling
+    private var tempRange: (min: Double, max: Double) {
+        let temps = allHourlyTemps.map { $0.temp }
+        guard !temps.isEmpty else { return (0, 10) }
+        let minTemp = temps.min() ?? 0
+        let maxTemp = temps.max() ?? 10
+        // Add padding for visual breathing room
+        return (minTemp - 2, maxTemp + 2)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Temp by hour (3-day)")
+                .font(.callout)
+                .fontWeight(.semibold)
+                .padding(.top, 8)
+            
+            VStack(spacing: 8) {
+                // Chart
+                GeometryReader { geometry in
+                    let width = geometry.size.width
+                    let height = geometry.size.height
+                    
+                    ZStack {
+                        // Fill area under the line
+                        ContinuousTemperatureFillShape(
+                            data: allHourlyTemps,
+                            tempRange: tempRange,
+                            width: width,
+                            height: height
+                        )
+                        .fill(Color.chartFill)
+                        
+                        // Line stroke
+                        ContinuousTemperatureLineShape(
+                            data: allHourlyTemps,
+                            tempRange: tempRange,
+                            width: width,
+                            height: height
+                        )
+                        .stroke(Color.chartStroke, lineWidth: 2)
+                        
+                        // Dots at 12pm and 6pm for each day
+                        ForEach(0..<3, id: \.self) { dayIndex in
+                            // 12pm dot
+                            if let point = getPointFor(dayIndex: dayIndex, hour: 12, width: width, height: height) {
+                                Circle()
+                                    .fill(Color.chartStroke)
+                                    .frame(width: 8, height: 8)
+                                    .position(point)
+                            }
+                            
+                            // 6pm dot
+                            if let point = getPointFor(dayIndex: dayIndex, hour: 18, width: width, height: height) {
+                                Circle()
+                                    .fill(Color.chartStroke)
+                                    .frame(width: 8, height: 8)
+                                    .position(point)
+                            }
+                        }
+                        
+                        // Labels for 12pm and 6pm
+                        ForEach(0..<3, id: \.self) { dayIndex in
+                            // 12pm label
+                            if let point = getPointFor(dayIndex: dayIndex, hour: 12, width: width, height: height) {
+                                Text("12")
+                                    .font(.caption2)
+                                    .foregroundColor(.chartStroke)
+                                    .position(x: point.x, y: point.y - 14)
+                            }
+                            
+                            // 6pm label
+                            if let point = getPointFor(dayIndex: dayIndex, hour: 18, width: width, height: height) {
+                                Text("6")
+                                    .font(.caption2)
+                                    .foregroundColor(.chartStroke)
+                                    .position(x: point.x, y: point.y - 14)
+                            }
+                        }
+                    }
+                }
+                .frame(height: 100)
+                
+                // Day labels
+                HStack {
+                    Text("Yesterday")
+                    Spacer()
+                    Text("Today")
+                    Spacer()
+                    Text("Tomorrow")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 12)
+            .background(Color(UIColor.systemBackground))
+            .cornerRadius(12)
+        }
+    }
+    
+    /// Get the CGPoint for a specific day and hour
+    private func getPointFor(dayIndex: Int, hour: Int, width: CGFloat, height: CGFloat) -> CGPoint? {
+        // Find the temperature for this day and hour
+        guard let tempData = allHourlyTemps.first(where: { $0.dayIndex == dayIndex && $0.hour == hour }) else {
+            return nil
+        }
+        
+        // X position: each day is 24 hours, total 72 hours
+        let totalHours: CGFloat = 72
+        let hourPosition = CGFloat(dayIndex * 24 + hour)
+        let x = (hourPosition / totalHours) * width
+        
+        // Y position based on temperature
+        let tempRangeSpan = tempRange.max - tempRange.min
+        let yRatio = tempRangeSpan > 0 ? (tempData.temp - tempRange.min) / tempRangeSpan : 0.5
+        let y = height * (1 - yRatio)
+        
+        return CGPoint(x: x, y: y)
+    }
+}
+
+// MARK: - Continuous Chart Shapes (72-hour)
+
+struct ContinuousTemperatureLineShape: Shape {
+    let data: [(dayIndex: Int, hour: Int, temp: Double)]
+    let tempRange: (min: Double, max: Double)
+    let width: CGFloat
+    let height: CGFloat
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard data.count >= 2 else { return path }
+        
+        let points = calculatePoints()
+        guard let firstPoint = points.first else { return path }
+        
+        path.move(to: firstPoint)
+        for point in points.dropFirst() {
+            path.addLine(to: point)
+        }
+        
+        return path
+    }
+    
+    private func calculatePoints() -> [CGPoint] {
+        let totalHours: CGFloat = 72
+        
+        return data.map { item in
+            let hourPosition = CGFloat(item.dayIndex * 24 + item.hour)
+            let x = (hourPosition / totalHours) * width
+            
+            let tempRangeSpan = tempRange.max - tempRange.min
+            let yRatio = tempRangeSpan > 0 ? (item.temp - tempRange.min) / tempRangeSpan : 0.5
+            let y = height * (1 - yRatio)
+            
+            return CGPoint(x: x, y: y)
+        }
+    }
+}
+
+struct ContinuousTemperatureFillShape: Shape {
+    let data: [(dayIndex: Int, hour: Int, temp: Double)]
+    let tempRange: (min: Double, max: Double)
+    let width: CGFloat
+    let height: CGFloat
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard data.count >= 2 else { return path }
+        
+        let points = calculatePoints()
+        guard let firstPoint = points.first, let lastPoint = points.last else { return path }
+        
+        // Start from bottom-left corner
+        path.move(to: CGPoint(x: firstPoint.x, y: height))
+        
+        // Go up to first data point
+        path.addLine(to: firstPoint)
+        
+        // Draw line through all points
+        for point in points.dropFirst() {
+            path.addLine(to: point)
+        }
+        
+        // Go down to bottom-right
+        path.addLine(to: CGPoint(x: lastPoint.x, y: height))
+        
+        // Close the path
+        path.closeSubpath()
+        
+        return path
+    }
+    
+    private func calculatePoints() -> [CGPoint] {
+        let totalHours: CGFloat = 72
+        
+        return data.map { item in
+            let hourPosition = CGFloat(item.dayIndex * 24 + item.hour)
+            let x = (hourPosition / totalHours) * width
+            
+            let tempRangeSpan = tempRange.max - tempRange.min
+            let yRatio = tempRangeSpan > 0 ? (item.temp - tempRange.min) / tempRangeSpan : 0.5
+            let y = height * (1 - yRatio)
+            
+            return CGPoint(x: x, y: y)
         }
     }
 }

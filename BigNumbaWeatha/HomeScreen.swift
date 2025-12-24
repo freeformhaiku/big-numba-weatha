@@ -516,89 +516,124 @@ struct ThreeDayHourlyChart: View {
         return (minTemp - 2, maxTemp + 2)
     }
     
+    /// Rounded values for y-axis labels
+    private var yAxisLabels: (min: Int, mid: Int, max: Int) {
+        let minRounded = Int(tempRange.min.rounded())
+        let maxRounded = Int(tempRange.max.rounded())
+        let mid = (minRounded + maxRounded) / 2
+        return (minRounded, mid, maxRounded)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Temp by hour (3-day)")
+            Text("Temp by hour")
                 .font(.callout)
                 .fontWeight(.semibold)
                 .padding(.top, 8)
             
-            VStack(spacing: 8) {
-                // Chart
-                GeometryReader { geometry in
-                    let width = geometry.size.width
-                    let height = geometry.size.height
+            VStack(spacing: 4) {
+                // Chart with Y-axis
+                HStack(alignment: .top, spacing: 8) {
+                    // Y-axis labels
+                    VStack {
+                        Text("\(yAxisLabels.max)°")
+                        Spacer()
+                        Text("\(yAxisLabels.mid)°")
+                        Spacer()
+                        Text("\(yAxisLabels.min)°")
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 100)
                     
-                    ZStack {
-                        // Fill area under the line
-                        ContinuousTemperatureFillShape(
-                            data: allHourlyTemps,
-                            tempRange: tempRange,
-                            width: width,
-                            height: height
-                        )
-                        .fill(Color.chartFill)
+                    // Chart
+                    GeometryReader { geometry in
+                        let width = geometry.size.width
+                        let height = geometry.size.height
                         
-                        // Line stroke
-                        ContinuousTemperatureLineShape(
-                            data: allHourlyTemps,
-                            tempRange: tempRange,
-                            width: width,
-                            height: height
-                        )
-                        .stroke(Color.chartStroke, lineWidth: 2)
-                        
-                        // Dots at 12pm and 6pm for each day
-                        ForEach(0..<3, id: \.self) { dayIndex in
-                            // 12pm dot
-                            if let point = getPointFor(dayIndex: dayIndex, hour: 12, width: width, height: height) {
-                                Circle()
-                                    .fill(Color.chartStroke)
-                                    .frame(width: 8, height: 8)
-                                    .position(point)
-                            }
+                        ZStack {
+                            // Fill area under the line
+                            ContinuousTemperatureFillShape(
+                                data: allHourlyTemps,
+                                tempRange: tempRange,
+                                width: width,
+                                height: height
+                            )
+                            .fill(Color.chartFill)
                             
-                            // 6pm dot
-                            if let point = getPointFor(dayIndex: dayIndex, hour: 18, width: width, height: height) {
-                                Circle()
-                                    .fill(Color.chartStroke)
-                                    .frame(width: 8, height: 8)
-                                    .position(point)
-                            }
-                        }
-                        
-                        // Labels for 12pm and 6pm
-                        ForEach(0..<3, id: \.self) { dayIndex in
-                            // 12pm label
-                            if let point = getPointFor(dayIndex: dayIndex, hour: 12, width: width, height: height) {
-                                Text("12")
-                                    .font(.caption2)
-                                    .foregroundColor(.chartStroke)
-                                    .position(x: point.x, y: point.y - 14)
-                            }
+                            // Line stroke
+                            ContinuousTemperatureLineShape(
+                                data: allHourlyTemps,
+                                tempRange: tempRange,
+                                width: width,
+                                height: height
+                            )
+                            .stroke(Color.chartStroke, lineWidth: 2)
                             
-                            // 6pm label
-                            if let point = getPointFor(dayIndex: dayIndex, hour: 18, width: width, height: height) {
-                                Text("6")
-                                    .font(.caption2)
-                                    .foregroundColor(.chartStroke)
-                                    .position(x: point.x, y: point.y - 14)
+                            // Dots at 12pm and 6pm for each day
+                            ForEach(0..<3, id: \.self) { dayIndex in
+                                // 12pm dot
+                                if let point = getPointFor(dayIndex: dayIndex, hour: 12, width: width, height: height) {
+                                    Circle()
+                                        .fill(Color.chartStroke)
+                                        .frame(width: 8, height: 8)
+                                        .position(point)
+                                }
+                                
+                                // 6pm dot
+                                if let point = getPointFor(dayIndex: dayIndex, hour: 18, width: width, height: height) {
+                                    Circle()
+                                        .fill(Color.chartStroke)
+                                        .frame(width: 8, height: 8)
+                                        .position(point)
+                                }
                             }
                         }
                     }
+                    .frame(height: 100)
                 }
-                .frame(height: 100)
+                
+                // X-axis time labels
+                HStack(spacing: 0) {
+                    // Spacer for Y-axis width
+                    Color.clear.frame(width: 36)
+                    
+                    // Time labels across the 72 hours
+                    HStack {
+                        Text("12a")
+                        Spacer()
+                        Text("12p")
+                        Spacer()
+                        Text("12a")
+                        Spacer()
+                        Text("12p")
+                        Spacer()
+                        Text("12a")
+                        Spacer()
+                        Text("12p")
+                        Spacer()
+                        Text("12a")
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                }
                 
                 // Day labels
-                HStack {
-                    Text("Yesterday")
-                    Spacer()
-                    Text("Today")
-                    Spacer()
-                    Text("Tomorrow")
+                HStack(spacing: 0) {
+                    // Spacer for Y-axis width
+                    Color.clear.frame(width: 36)
+                    
+                    HStack {
+                        Text("Yesterday")
+                        Spacer()
+                        Text("Today")
+                        Spacer()
+                        Text("Tomorrow")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .padding(.top, 4)
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 12)

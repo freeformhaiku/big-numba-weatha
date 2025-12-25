@@ -4,14 +4,61 @@ import SwiftUI
 extension Color {
     static let unitSelectedText = Color(red: 61.0/255.0, green: 63.0/255.0, blue: 208.0/255.0)    // #3D3FD0
     static let unitSelectedCheck = Color(red: 106.0/255.0, green: 108.0/255.0, blue: 255.0/255.0) // #6A6CFF
-    static let chevronBackground = Color(red: 229.0/255.0, green: 229.0/255.0, blue: 229.0/255.0) // #E5E5E5
-    static let chevronIcon = Color(red: 122.0/255.0, green: 122.0/255.0, blue: 122.0/255.0)       // #7A7A7A
-    static let unitButtonBackground = Color(red: 229.0/255.0, green: 229.0/255.0, blue: 229.0/255.0) // #E5E5E5
-    static let unitButtonPressed = Color(red: 210.0/255.0, green: 210.0/255.0, blue: 210.0/255.0)    // #D2D2D2
     static let chartStroke = Color(red: 121.0/255.0, green: 75.0/255.0, blue: 196.0/255.0)        // #794BC4
     static let chartFill = Color(red: 228.0/255.0, green: 197.0/255.0, blue: 255.0/255.0)         // #E4C5FF (keeping for reference)
-    static let chartFillTop = Color(red: 228.0/255.0, green: 213.0/255.0, blue: 242.0/255.0)      // #E4D5F2
-    static let chartFillBottom = Color.white.opacity(0)                                            // Transparent
+    
+    // Dark mode card background: #222222
+    static let cardBackgroundDark = Color(red: 34.0/255.0, green: 34.0/255.0, blue: 34.0/255.0)
+    
+    // Dark mode secondary text: #9A9A9A
+    static let secondaryTextDark = Color(red: 154.0/255.0, green: 154.0/255.0, blue: 154.0/255.0)
+    
+    // Dark mode screen background: #111111
+    static let screenBackgroundDark = Color(red: 17.0/255.0, green: 17.0/255.0, blue: 17.0/255.0)
+    
+    // Dark mode current time dot: #D5BBFF
+    static let currentTimeDotDark = Color(red: 213.0/255.0, green: 187.0/255.0, blue: 255.0/255.0)
+    
+    static func currentTimeDot(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? currentTimeDotDark : chartStroke
+    }
+    
+    // Adaptive colors that change based on color scheme
+    static func screenBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? screenBackgroundDark : Color(UIColor.systemGroupedBackground)
+    }
+    
+    static func cardBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? cardBackgroundDark : Color(UIColor.systemBackground)
+    }
+    
+    static func chevronBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? cardBackgroundDark : Color(red: 229.0/255.0, green: 229.0/255.0, blue: 229.0/255.0)
+    }
+    
+    static func unitButtonBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? cardBackgroundDark : Color(red: 229.0/255.0, green: 229.0/255.0, blue: 229.0/255.0)
+    }
+    
+    static func unitButtonPressed(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(red: 50.0/255.0, green: 50.0/255.0, blue: 50.0/255.0) : Color(red: 210.0/255.0, green: 210.0/255.0, blue: 210.0/255.0)
+    }
+    
+    static func primaryText(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? .white : .primary
+    }
+    
+    static func secondaryText(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? secondaryTextDark : .secondary
+    }
+    
+    static func chartFillTop(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(red: 80.0/255.0, green: 60.0/255.0, blue: 100.0/255.0) : Color(red: 228.0/255.0, green: 213.0/255.0, blue: 242.0/255.0)
+    }
+    
+    static func chartFillBottom(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? cardBackgroundDark.opacity(0) : Color.white.opacity(0)
+    }
 }
 
 // MARK: - Pressable Button Style
@@ -31,11 +78,12 @@ struct HomeScreen: View {
     @StateObject private var viewModel = WeatherViewModel()
     @State private var showCityPicker = false
     @State private var isUnitButtonPressed = false
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         ZStack {
             // Background
-            Color(UIColor.systemGroupedBackground)
+            Color.screenBackground(for: colorScheme)
                 .ignoresSafeArea()
             
             ScrollView {
@@ -51,6 +99,7 @@ struct HomeScreen: View {
                             Text("big numba weatha")
                                 .font(.title2)
                                 .fontWeight(.medium)
+                                .foregroundColor(Color.primaryText(for: colorScheme))
                         }
                         
                         // Right-aligned unit button
@@ -66,12 +115,12 @@ struct HomeScreen: View {
                                 Text(viewModel.temperatureUnit.symbol)
                                     .font(.body)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(Color.primaryText(for: colorScheme))
                                     .frame(width: 36)  // Fixed width so °C and °F don't shift the layout
                                     .padding(.vertical, 4)
                                     .background(
                                         RoundedRectangle(cornerRadius: 6)
-                                            .fill(isUnitButtonPressed ? Color.unitButtonPressed : Color.unitButtonBackground)
+                                            .fill(isUnitButtonPressed ? Color.unitButtonPressed(for: colorScheme) : Color.unitButtonBackground(for: colorScheme))
                                     )
                             }
                             .buttonStyle(PressableButtonStyle(isPressed: $isUnitButtonPressed))
@@ -86,7 +135,8 @@ struct HomeScreen: View {
                             yesterdayWeather: viewModel.yesterdayWeather,
                             city: viewModel.currentCity,
                             unit: viewModel.temperatureUnit,
-                            onCityTap: { showCityPicker = true }
+                            onCityTap: { showCityPicker = true },
+                            colorScheme: colorScheme
                         )
                     } else if viewModel.isLoading {
                         LoadingCard(height: 200)
@@ -99,7 +149,8 @@ struct HomeScreen: View {
                         ThreeDayHourlyChart(
                             yesterday: yesterday,
                             today: today,
-                            tomorrow: tomorrow
+                            tomorrow: tomorrow,
+                            colorScheme: colorScheme
                         )
                         .padding(.top, -8) // Pull up by 8 points to reduce space between bottom of Today's card and top of temp by hour
                     }
@@ -108,14 +159,14 @@ struct HomeScreen: View {
                     HStack(spacing: 12) {
                         // Yesterday
                         if let yesterday = viewModel.yesterdayWeather {
-                            SecondaryWeatherCard(weather: yesterday)
+                            SecondaryWeatherCard(weather: yesterday, colorScheme: colorScheme)
                         } else if viewModel.isLoading {
                             LoadingCard(height: 140)
                         }
                         
                         // Tomorrow
                         if let tomorrow = viewModel.tomorrowWeather {
-                            SecondaryWeatherCard(weather: tomorrow)
+                            SecondaryWeatherCard(weather: tomorrow, colorScheme: colorScheme)
                         } else if viewModel.isLoading {
                             LoadingCard(height: 140)
                         }
@@ -127,10 +178,11 @@ struct HomeScreen: View {
                             Text("My Cities")
                                 .font(.title3)
                                 .fontWeight(.semibold)
+                                .foregroundColor(Color.primaryText(for: colorScheme))
                                 .padding(.top, 8)
                             
                             ForEach(viewModel.savedCities) { city in
-                                SavedCityCard(city: city)
+                                SavedCityCard(city: city, colorScheme: colorScheme)
                                     .onTapGesture {
                                         Task {
                                             await viewModel.selectCity(city)
@@ -196,6 +248,7 @@ struct TodayWeatherCard: View {
     let city: SavedCity
     let unit: TemperatureUnit
     let onCityTap: () -> Void
+    let colorScheme: ColorScheme
     
     /// Generates the comparison text like "2 degrees cooler than yesterday"
     /// Compares the average temperature (high + low / 2) of today vs yesterday
@@ -233,36 +286,45 @@ struct TodayWeatherCard: View {
             // Date
             Text(weather.date.fullDateString)
                 .font(.body)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.secondaryText(for: colorScheme))
             
-            // Big temperature number
+            // Big temperature number (with invisible left spacer to visually center)
             HStack(alignment: .top, spacing: 2) {
-                Text("\(weather.currentTemp ?? weather.highTemp)")
-                    .font(.system(size: 80, weight: .regular))
+                // Invisible spacer matching the °C/°F size
                 Text(unit.symbol)
                     .font(.title2)
+                    .foregroundColor(.clear)
+                    .padding(.top, 12)
+                
+                Text("\(weather.currentTemp ?? weather.highTemp)")
+                    .font(.system(size: 80, weight: .regular))
+                    .foregroundColor(Color.primaryText(for: colorScheme))
+                
+                Text(unit.symbol)
+                    .font(.title2)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
                     .padding(.top, 12)
             }
             
             // High / Low
             HStack(spacing: 16) {
                 Text("\(weather.lowTemp)°")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
                 Text("\(weather.highTemp)°")
-                    .foregroundColor(.primary)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
             }
             .font(.title3)
             
             // Weather condition and comparison
             HStack(spacing: 6) {
                 Text(weather.condition.displayName)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
                 
                 if let comparison = comparisonText {
                     Text("•")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.secondaryText(for: colorScheme))
                     Text(comparison)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.secondaryText(for: colorScheme))
                 }
             }
             .font(.subheadline)
@@ -278,17 +340,17 @@ struct TodayWeatherCard: View {
                     }
                     
                     Text(city.displayName)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.secondaryText(for: colorScheme))
                     
                     // Dropdown indicator with custom colors
                     Circle()
-                        .fill(Color.chevronBackground)
+                        .fill(Color.chevronBackground(for: colorScheme))
                         .frame(width: 24, height: 24)
                         .overlay(
                             Image(systemName: "chevron.down")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.chevronIcon)
+                                .foregroundColor(Color.secondaryText(for: colorScheme))
                         )
                 }
                 .font(.body)
@@ -298,7 +360,7 @@ struct TodayWeatherCard: View {
         .padding(.vertical, 24)
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity)
-        .background(Color(UIColor.systemBackground))
+        .background(Color.cardBackground(for: colorScheme))
         .cornerRadius(16)
     }
 }
@@ -307,36 +369,38 @@ struct TodayWeatherCard: View {
 
 struct SecondaryWeatherCard: View {
     let weather: DayWeather
+    let colorScheme: ColorScheme
     
     var body: some View {
         VStack(spacing: 12) {
             // Abbreviated date
             Text(weather.date.abbreviatedDateString)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.secondaryText(for: colorScheme))
             
             // Weather icon - fixed frame for consistent card heights
-            WeatherIcon(condition: weather.condition)
+            WeatherIcon(condition: weather.condition, colorScheme: colorScheme)
                 .frame(width: 40, height: 40)
             
             // Weather condition label
             Text(weather.condition.displayName)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.secondaryText(for: colorScheme))
             
             // High / Low
             HStack(spacing: 12) {
                 Text("\(weather.lowTemp)°")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
                 Text("\(weather.highTemp)°")
                     .fontWeight(.medium)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
             }
             .font(.title3)
         }
         .padding(.vertical, 20)
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity)
-        .background(Color(UIColor.systemBackground))
+        .background(Color.cardBackground(for: colorScheme))
         .cornerRadius(12)
     }
 }
@@ -346,6 +410,7 @@ struct SecondaryWeatherCard: View {
 struct WeatherIcon: View {
     let condition: WeatherCondition
     var size: CGFloat = 32
+    var colorScheme: ColorScheme = .light
     
     var body: some View {
         if WeatherCondition.useCustomIcons {
@@ -358,7 +423,7 @@ struct WeatherIcon: View {
             // SF Symbol
             Image(systemName: condition.sfSymbolName)
                 .font(.system(size: size))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.secondaryText(for: colorScheme))
         }
     }
 }
@@ -367,24 +432,27 @@ struct WeatherIcon: View {
 
 struct SavedCityCard: View {
     let city: SavedCity
+    let colorScheme: ColorScheme
     
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(city.name)
                     .font(.headline)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
                 Text("--")  // Placeholder for time, would need timezone data
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
             }
             
             Spacer()
             
             Text("--°")  // Placeholder for temperature
                 .font(.largeTitle)
+                .foregroundColor(Color.primaryText(for: colorScheme))
         }
         .padding()
-        .background(Color(UIColor.systemBackground))
+        .background(Color.cardBackground(for: colorScheme))
         .cornerRadius(12)
     }
 }
@@ -487,6 +555,7 @@ struct ThreeDayHourlyChart: View {
     let yesterday: DayWeather
     let today: DayWeather
     let tomorrow: DayWeather
+    let colorScheme: ColorScheme
     
     /// Combine all hourly temps into a single 72-hour array
     private var allHourlyTemps: [(dayIndex: Int, hour: Int, temp: Double)] {
@@ -560,6 +629,7 @@ struct ThreeDayHourlyChart: View {
             Text("Temp by hour")
                 .font(.callout)
                 .fontWeight(.semibold)
+                .foregroundColor(Color.primaryText(for: colorScheme))
                 .padding(.top, 8)
             
             VStack(spacing: 4) {
@@ -577,7 +647,7 @@ struct ThreeDayHourlyChart: View {
                         }
                     }
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
                     .frame(width: 32, height: 100)
                     
                     // Chart
@@ -605,7 +675,7 @@ struct ThreeDayHourlyChart: View {
                             )
                             .fill(
                                 LinearGradient(
-                                    gradient: Gradient(colors: [Color.chartFillTop, Color.chartFillBottom]),
+                                    gradient: Gradient(colors: [Color.chartFillTop(for: colorScheme), Color.chartFillBottom(for: colorScheme)]),
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
@@ -623,7 +693,7 @@ struct ThreeDayHourlyChart: View {
                             // Current time dot
                             if let currentPoint = getCurrentTimePoint(width: width, height: height) {
                                 Circle()
-                                    .fill(Color.chartStroke)
+                                    .fill(Color.currentTimeDot(for: colorScheme))
                                     .frame(width: 8, height: 8)
                                     .position(currentPoint)
                             }
@@ -654,7 +724,7 @@ struct ThreeDayHourlyChart: View {
                         Text("12a")
                     }
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
                 }
                 
                 // Day labels
@@ -670,13 +740,13 @@ struct ThreeDayHourlyChart: View {
                         Text("Tomorrow")
                     }
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
                 }
                 .padding(.top, 4)
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 12)
-            .background(Color(UIColor.systemBackground))
+            .background(Color.cardBackground(for: colorScheme))
             .cornerRadius(12)
         }
     }

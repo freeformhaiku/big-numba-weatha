@@ -134,36 +134,38 @@ class WeatherService {
         let calendar = Calendar.current
         var hourlyByDay: [[HourlyTemp]] = dates.map { _ in [] }
         
-        // Parse the hourly time strings and temperatures
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+        // Create date strings for comparison (YYYY-MM-DD format)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStrings = dates.map { dateFormatter.string(from: $0) }
         
         for (index, timeString) in hourly.time.enumerated() {
             guard index < hourly.temperature.count else { break }
             
-            // Parse the ISO8601 time string (e.g., "2024-12-24T09:00")
-            if let date = dateFormatter.date(from: timeString + ":00") ?? parseDateFallback(timeString) {
-                let hour = calendar.component(.hour, from: date)
-                let temp = hourly.temperature[index]
-                
-                // Find which day this hour belongs to
-                for (dayIndex, dayDate) in dates.enumerated() {
-                    if calendar.isDate(date, inSameDayAs: dayDate) {
-                        hourlyByDay[dayIndex].append(HourlyTemp(hour: hour, temp: temp))
-                        break
-                    }
+            // Extract the date part (YYYY-MM-DD) and hour from the time string
+            // Time string format: "2024-12-24T09:00"
+            let components = timeString.split(separator: "T")
+            guard components.count == 2 else { continue }
+            
+            let datePart = String(components[0])
+            let timePart = String(components[1])
+            
+            // Extract hour from time part (e.g., "09:00" -> 9)
+            let hourComponents = timePart.split(separator: ":")
+            guard let hour = Int(hourComponents[0]) else { continue }
+            
+            let temp = hourly.temperature[index]
+            
+            // Find which day this hour belongs to by comparing date strings
+            for (dayIndex, dayDateString) in dateStrings.enumerated() {
+                if datePart == dayDateString {
+                    hourlyByDay[dayIndex].append(HourlyTemp(hour: hour, temp: temp))
+                    break
                 }
             }
         }
         
         return hourlyByDay
-    }
-    
-    /// Fallback date parser for hourly time strings
-    private func parseDateFallback(_ timeString: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        return formatter.date(from: timeString)
     }
     
     private func parseWeatherResponse(_ response: WeatherAPIResponse, dates: [Date], hourlyByDay: [[HourlyTemp]]) throws -> [DayWeather] {

@@ -101,7 +101,7 @@ struct HomeScreen: View {
                             today: today,
                             tomorrow: tomorrow
                         )
-                        .padding(.top, -8) // Pull up by 8 points bc i'm trying to reduce space between bottom of Today's card and top of temp by hour
+                        .padding(.top, -8) // Pull up by 8 points to reduce space between bottom of Today's card and top of temp by hour
                     }
                     
                     // MARK: - Yesterday & Tomorrow Row

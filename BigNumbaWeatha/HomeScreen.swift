@@ -300,7 +300,7 @@ struct TodayWeatherCard: View {
                 .foregroundColor(Color.secondaryText(for: colorScheme))
             
             // Big temperature number (with invisible left spacer to visually center)
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .top, spacing: 2) {
                 // Invisible spacer matching the °C/°F size
                 Text(unit.symbol)
                     .font(.title2)
@@ -316,6 +316,7 @@ struct TodayWeatherCard: View {
                     .foregroundColor(Color.primaryText(for: colorScheme))
                     .padding(.top, 12)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             
             // High / Low
             HStack(spacing: 16) {

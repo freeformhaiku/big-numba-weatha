@@ -29,6 +29,9 @@ extension Color {
     // Add city button purple (same as chart stroke)
     static let addCityButtonPurple = Color(red: 121.0/255.0, green: 75.0/255.0, blue: 196.0/255.0)  // #794BC4
     
+    // Delete button red: #ED463F
+    static let deleteButtonRed = Color(red: 237.0/255.0, green: 70.0/255.0, blue: 63.0/255.0)
+    
     // Adaptive colors that change based on color scheme
     static func screenBackground(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark ? screenBackgroundDark : Color(UIColor.systemGroupedBackground)
@@ -408,9 +411,12 @@ struct MyCitiesSection: View {
     @Binding var showCityPicker: Bool
     let colorScheme: ColorScheme
     
+    @State private var isEditMode = false
+    @State private var cityPendingDelete: UUID? = nil  // Track which city is showing delete confirmation
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header with Edit button
+            // Header with Edit/Done button
             HStack {
                 Text("My Cities")
                     .font(.callout)
@@ -421,9 +427,15 @@ struct MyCitiesSection: View {
                 
                 if !viewModel.savedCities.isEmpty {
                     Button(action: {
-                        // Edit functionality to be added later
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isEditMode.toggle()
+                            // Reset pending delete when exiting edit mode
+                            if !isEditMode {
+                                cityPendingDelete = nil
+                            }
+                        }
                     }) {
-                        Text("Edit")
+                        Text(isEditMode ? "Done" : "Edit")
                             .font(.footnote)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
@@ -466,24 +478,247 @@ struct MyCitiesSection: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             } else {
-                // Populated state - Separate card for each city
+                // Populated state - City cards with edit mode support
                 ForEach(viewModel.savedCities) { city in
-                    SavedCityRow(
+                    EditableCityRow(
                         city: city,
                         weather: viewModel.savedCityWeather[city.id.uuidString],
-                        colorScheme: colorScheme
-                    )
-                    .background(Color.cardBackground(for: colorScheme))
-                    .cornerRadius(12)
-                    .onTapGesture {
-                        Task {
-                            await viewModel.selectCity(city)
+                        colorScheme: colorScheme,
+                        isEditMode: isEditMode,
+                        isPendingDelete: cityPendingDelete == city.id,
+                        onTap: {
+                            if !isEditMode {
+                                Task {
+                                    await viewModel.selectCity(city)
+                                }
+                            }
+                        },
+                        onDeleteButtonTap: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if cityPendingDelete == city.id {
+                                    // Already showing delete, hide it
+                                    cityPendingDelete = nil
+                                } else {
+                                    // Show delete for this city
+                                    cityPendingDelete = city.id
+                                }
+                            }
+                        },
+                        onConfirmDelete: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                viewModel.removeCity(city)
+                                cityPendingDelete = nil
+                                // Exit edit mode if no more cities
+                                if viewModel.savedCities.isEmpty {
+                                    isEditMode = false
+                                }
+                            }
+                        },
+                        onCancelDelete: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                cityPendingDelete = nil
+                            }
                         }
+                    )
+                }
+                
+                // Add a city button (only in edit mode)
+                if isEditMode {
+                    Button(action: {
+                        showCityPicker = true
+                    }) {
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(Color.addCityButtonPurple)
+                                .frame(width: 28, height: 28)
+                                .overlay(
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+                            
+                            Text("Add a city")
+                                .font(.callout)
+                                .fontWeight(.bold)
+                                .foregroundColor(Color.primaryText(for: colorScheme))
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.cardBackground(for: colorScheme))
+                        .cornerRadius(12)
                     }
+                    .buttonStyle(PlainButtonStyle())
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }
         .padding(.top, 8)
+    }
+}
+
+// MARK: - Editable City Row
+
+struct EditableCityRow: View {
+    let city: SavedCity
+    let weather: CityWeatherSummary?
+    let colorScheme: ColorScheme
+    let isEditMode: Bool
+    let isPendingDelete: Bool
+    let onTap: () -> Void
+    let onDeleteButtonTap: () -> Void
+    let onConfirmDelete: () -> Void
+    let onCancelDelete: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            // Delete button (red circle with minus) - only in edit mode
+            if isEditMode {
+                Button(action: onDeleteButtonTap) {
+                    Circle()
+                        .fill(Color.deleteButtonRed)
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Rectangle()
+                                .fill(.white)
+                                .frame(width: 12, height: 3)
+                                .cornerRadius(1)
+                        )
+                }
+                .padding(.trailing, 12)
+                .transition(.opacity.combined(with: .move(edge: .leading)))
+            }
+            
+            // City card content
+            ZStack {
+                // Background tap area to cancel delete
+                if isPendingDelete {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onCancelDelete()
+                        }
+                }
+                
+                HStack(spacing: 0) {
+                    // Main content
+                    SavedCityRowContent(
+                        city: city,
+                        weather: weather,
+                        colorScheme: colorScheme
+                    )
+                    .frame(maxWidth: .infinity)
+                    
+                    // Drag handle (only in edit mode, not when delete is pending)
+                    if isEditMode && !isPendingDelete {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Color.secondaryText(for: colorScheme))
+                            .padding(.horizontal, 12)
+                    }
+                    
+                    // Delete confirmation button (trash icon)
+                    if isPendingDelete {
+                        Button(action: onConfirmDelete) {
+                            RoundedRectangle(cornerRadius: 0)
+                                .fill(Color.deleteButtonRed)
+                                .frame(width: 70)
+                                .overlay(
+                                    Image(systemName: "trash.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(.white)
+                                )
+                        }
+                        .cornerRadius(12, corners: [.topRight, .bottomRight])
+                        .transition(.move(edge: .trailing))
+                    }
+                }
+            }
+            .background(Color.cardBackground(for: colorScheme))
+            .cornerRadius(12)
+            .onTapGesture {
+                if !isEditMode && !isPendingDelete {
+                    onTap()
+                } else if isPendingDelete {
+                    onCancelDelete()
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isPendingDelete)
+        .animation(.easeInOut(duration: 0.25), value: isEditMode)
+    }
+}
+
+// MARK: - Saved City Row Content (just the content, no background)
+
+struct SavedCityRowContent: View {
+    let city: SavedCity
+    let weather: CityWeatherSummary?
+    let colorScheme: ColorScheme
+    
+    /// Formats the current time in the city's timezone
+    private var localTimeString: String {
+        guard let weather = weather else { return "--" }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mma"
+        formatter.amSymbol = "AM"
+        formatter.pmSymbol = "PM"
+        
+        if let timezone = TimeZone(identifier: weather.timezone) {
+            formatter.timeZone = timezone
+        }
+        
+        return formatter.string(from: Date())
+    }
+    
+    var body: some View {
+        HStack {
+            // Left side: City name, time, weather condition
+            VStack(alignment: .leading, spacing: 4) {
+                Text(city.name)
+                    .font(.callout)
+                    .fontWeight(.bold)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
+                
+                Text(localTimeString)
+                    .font(.footnote)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
+                
+                if let weather = weather {
+                    Text(weather.condition.displayName)
+                        .font(.footnote)
+                        .foregroundColor(Color.secondaryText(for: colorScheme))
+                }
+            }
+            
+            Spacer()
+            
+            // Right side: Current temp and high/low
+            if let weather = weather {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("\(weather.currentTemp)°")
+                        .font(.largeTitle)
+                        .fontWeight(.regular)
+                        .foregroundColor(Color.primaryText(for: colorScheme))
+                    
+                    HStack(spacing: 4) {
+                        Text("\(weather.lowTemp)°")
+                            .foregroundColor(Color.secondaryText(for: colorScheme))
+                        Text("\(weather.highTemp)°")
+                            .foregroundColor(Color.primaryText(for: colorScheme))
+                    }
+                    .font(.footnote)
+                }
+            } else {
+                Text("--°")
+                    .font(.largeTitle)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
@@ -695,78 +930,6 @@ struct WeatherIcon: View {
                 .font(.system(size: size))
                 .foregroundColor(Color.secondaryText(for: colorScheme))
         }
-    }
-}
-
-// MARK: - Saved City Row (for My Cities section)
-
-struct SavedCityRow: View {
-    let city: SavedCity
-    let weather: CityWeatherSummary?
-    let colorScheme: ColorScheme
-    
-    /// Formats the current time in the city's timezone
-    private var localTimeString: String {
-        guard let weather = weather else { return "--" }
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mma"
-        formatter.amSymbol = "AM"
-        formatter.pmSymbol = "PM"
-        
-        if let timezone = TimeZone(identifier: weather.timezone) {
-            formatter.timeZone = timezone
-        }
-        
-        return formatter.string(from: Date())
-    }
-    
-    var body: some View {
-        HStack {
-            // Left side: City name, time, weather condition
-            VStack(alignment: .leading, spacing: 4) {
-                Text(city.name)
-                    .font(.callout)
-                    .fontWeight(.bold)
-                    .foregroundColor(Color.primaryText(for: colorScheme))
-                
-                Text(localTimeString)
-                    .font(.footnote)
-                    .foregroundColor(Color.secondaryText(for: colorScheme))
-                
-                if let weather = weather {
-                    Text(weather.condition.displayName)
-                        .font(.footnote)
-                        .foregroundColor(Color.secondaryText(for: colorScheme))
-                }
-            }
-            
-            Spacer()
-            
-            // Right side: Current temp and high/low
-            if let weather = weather {
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("\(weather.currentTemp)°")
-                        .font(.largeTitle)
-                        .fontWeight(.regular)
-                        .foregroundColor(Color.primaryText(for: colorScheme))
-                    
-                    HStack(spacing: 4) {
-                        Text("\(weather.lowTemp)°")
-                            .foregroundColor(Color.secondaryText(for: colorScheme))
-                        Text("\(weather.highTemp)°")
-                            .foregroundColor(Color.primaryText(for: colorScheme))
-                    }
-                    .font(.footnote)
-                }
-            } else {
-                Text("--°")
-                    .font(.largeTitle)
-                    .foregroundColor(Color.secondaryText(for: colorScheme))
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 }
 

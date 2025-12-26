@@ -123,6 +123,58 @@ class WeatherService {
         return geocodingResponse.results?.map { $0.toSavedCity() } ?? []
     }
     
+    /// Fetches a weather summary for a city (used for My Cities list)
+    /// - Parameters:
+    ///   - city: The city to fetch weather for
+    ///   - unit: Temperature unit
+    /// - Returns: Weather summary with current temp, high/low, condition, and timezone
+    func fetchWeatherSummary(for city: SavedCity, unit: TemperatureUnit = .celsius) async throws -> CityWeatherSummary {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = dateFormatter.string(from: Date())
+        
+        var components = URLComponents(string: weatherBaseURL)!
+        components.queryItems = [
+            URLQueryItem(name: "latitude", value: String(city.latitude)),
+            URLQueryItem(name: "longitude", value: String(city.longitude)),
+            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weathercode"),
+            URLQueryItem(name: "current_weather", value: "true"),
+            URLQueryItem(name: "temperature_unit", value: unit.apiValue),
+            URLQueryItem(name: "timezone", value: "auto"),
+            URLQueryItem(name: "start_date", value: today),
+            URLQueryItem(name: "end_date", value: today)
+        ]
+        
+        guard let url = components.url else {
+            throw WeatherError.invalidURL
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw WeatherError.serverError
+        }
+        
+        let decoder = JSONDecoder()
+        let weatherResponse = try decoder.decode(WeatherAPIResponse.self, from: data)
+        
+        guard let currentWeather = weatherResponse.currentWeather,
+              let highTemp = weatherResponse.daily.temperatureMax.first,
+              let lowTemp = weatherResponse.daily.temperatureMin.first,
+              let weatherCode = weatherResponse.daily.weathercode.first else {
+            throw WeatherError.insufficientData
+        }
+        
+        return CityWeatherSummary(
+            currentTemp: Int(currentWeather.temperature.rounded()),
+            highTemp: Int(highTemp.rounded()),
+            lowTemp: Int(lowTemp.rounded()),
+            condition: mapWeatherCode(weatherCode),
+            timezone: weatherResponse.timezone ?? "UTC"
+        )
+    }
+    
     // MARK: - Private Helpers
     
     /// Parses hourly data and groups it by day

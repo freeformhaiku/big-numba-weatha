@@ -23,6 +23,12 @@ extension Color {
         colorScheme == .dark ? currentTimeDotDark : chartStroke
     }
     
+    // Edit button background: #555555
+    static let editButtonBackground = Color(red: 85.0/255.0, green: 85.0/255.0, blue: 85.0/255.0)
+    
+    // Add city button purple (same as chart stroke)
+    static let addCityButtonPurple = Color(red: 121.0/255.0, green: 75.0/255.0, blue: 196.0/255.0)  // #794BC4
+    
     // Adaptive colors that change based on color scheme
     static func screenBackground(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark ? screenBackgroundDark : Color(UIColor.systemGroupedBackground)
@@ -84,138 +90,55 @@ struct HomeScreen: View {
     // This ID changes to force the chart to redraw when app becomes active
     @State private var refreshID = UUID()
     
+    // Track which city index is selected for swiping
+    @State private var selectedCityIndex: Int = 0
+    
     var body: some View {
         ZStack {
             // Background
             Color.screenBackground(for: colorScheme)
                 .ignoresSafeArea()
             
-            ScrollView {
-                VStack(spacing: 16) {
-                    
-                    // Header with title and unit toggle
-                    ZStack {
-                        // Centered title with app icon
-                        HStack(spacing: 8) {
-                            Image("app-icon-small")
-                                .resizable()
-                                .frame(width: 24, height: 24)
-                            Text("big numba weatha")
-                                .font(.title2)
-                                .fontWeight(.medium)
-                                .foregroundColor(Color.primaryText(for: colorScheme))
-                        }
-                        
-                        // Right-aligned unit button
-                        HStack {
-                            Spacer()
-                            
-                            Button(action: {
-                                Task {
-                                    let newUnit: TemperatureUnit = viewModel.temperatureUnit == .celsius ? .fahrenheit : .celsius
-                                    await viewModel.setTemperatureUnit(newUnit)
-                                }
-                            }) {
-                                Text(viewModel.temperatureUnit.symbol)
-                                    .font(.body)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(Color.primaryText(for: colorScheme))
-                                    .frame(width: 36)  // Fixed width so °C and °F don't shift the layout
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(isUnitButtonPressed ? Color.unitButtonPressed(for: colorScheme) : Color.unitButtonBackground(for: colorScheme))
-                                    )
-                            }
-                            .buttonStyle(PressableButtonStyle(isPressed: $isUnitButtonPressed))
-                        }
-                    }
-                    .padding(.top, 8)
-                    
-                    // MARK: - Today's Weather (Primary Block)
-                    if let today = viewModel.todayWeather {
-                        TodayWeatherCard(
-                            weather: today,
-                            yesterdayWeather: viewModel.yesterdayWeather,
-                            city: viewModel.currentCity,
-                            unit: viewModel.temperatureUnit,
-                            onCityTap: { showCityPicker = true },
+            if viewModel.savedCities.isEmpty {
+                // No saved cities yet - show single city view (non-swipeable)
+                SingleCityView(
+                    viewModel: viewModel,
+                    showCityPicker: $showCityPicker,
+                    isUnitButtonPressed: $isUnitButtonPressed,
+                    refreshID: $refreshID,
+                    colorScheme: colorScheme
+                )
+            } else {
+                // Multiple cities - swipeable TabView
+                TabView(selection: $selectedCityIndex) {
+                    ForEach(Array(viewModel.savedCities.enumerated()), id: \.element.id) { index, city in
+                        CityWeatherPage(
+                            viewModel: viewModel,
+                            city: city,
+                            showCityPicker: $showCityPicker,
+                            isUnitButtonPressed: $isUnitButtonPressed,
+                            refreshID: $refreshID,
                             colorScheme: colorScheme
                         )
-                    } else if viewModel.isLoading {
-                        LoadingCard(height: 200)
+                        .tag(index)
                     }
-                    
-                    // MARK: - Temp by Hour (3-day) Chart
-                    if let yesterday = viewModel.yesterdayWeather,
-                       let today = viewModel.todayWeather,
-                       let tomorrow = viewModel.tomorrowWeather {
-                        ThreeDayHourlyChart(
-                            yesterday: yesterday,
-                            today: today,
-                            tomorrow: tomorrow,
-                            colorScheme: colorScheme
-                        )
-                        .id(refreshID) // Force redraw when app becomes active to update current time dot
-                        .padding(.top, -8) // Pull up by 8 points to reduce space between bottom of Today's card and top of temp by hour
-                    }
-                    
-                    // MARK: - Yesterday & Tomorrow Row
-                    HStack(spacing: 12) {
-                        // Yesterday
-                        if let yesterday = viewModel.yesterdayWeather {
-                            SecondaryWeatherCard(weather: yesterday, colorScheme: colorScheme)
-                        } else if viewModel.isLoading {
-                            LoadingCard(height: 140)
-                        }
-                        
-                        // Tomorrow
-                        if let tomorrow = viewModel.tomorrowWeather {
-                            SecondaryWeatherCard(weather: tomorrow, colorScheme: colorScheme)
-                        } else if viewModel.isLoading {
-                            LoadingCard(height: 140)
-                        }
-                    }
-                    
-                    // MARK: - My Cities Section (placeholder for future)
-                    if !viewModel.savedCities.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("My Cities")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                                .foregroundColor(Color.primaryText(for: colorScheme))
-                                .padding(.top, 8)
-                            
-                            ForEach(viewModel.savedCities) { city in
-                                SavedCityCard(city: city, colorScheme: colorScheme)
-                                    .onTapGesture {
-                                        Task {
-                                            await viewModel.selectCity(city)
-                                        }
-                                    }
-                            }
-                        }
-                    }
-                    
-                    // Error message
-                    if let error = viewModel.errorMessage {
-                        Text(error)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .padding()
-                    }
-                    
-                    Spacer(minLength: 40)
                 }
-                .padding(.horizontal, 16)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .onChange(of: selectedCityIndex) { newIndex in
+                    // When user swipes to a different city, update the viewModel
+                    if newIndex >= 0 && newIndex < viewModel.savedCities.count {
+                        let city = viewModel.savedCities[newIndex]
+                        if city.id != viewModel.currentCity.id {
+                            Task {
+                                await viewModel.selectCity(city)
+                            }
+                        }
+                    }
+                }
             }
         }
         .task {
             // Fetch weather when the view appears
-            await viewModel.fetchWeather()
-        }
-        .refreshable {
-            // Pull to refresh
             await viewModel.fetchWeather()
         }
         .onChange(of: scenePhase) { newPhase in
@@ -224,9 +147,343 @@ struct HomeScreen: View {
                 refreshID = UUID()
             }
         }
+        .onChange(of: viewModel.currentCity.id) { _ in
+            // Sync selectedCityIndex when currentCity changes (e.g., from My Cities tap)
+            if let index = viewModel.savedCities.firstIndex(where: { $0.id == viewModel.currentCity.id }) {
+                if selectedCityIndex != index {
+                    selectedCityIndex = index
+                }
+            }
+        }
+        .onChange(of: viewModel.savedCities.count) { _ in
+            // When cities are added, update the selected index to match current city
+            if let index = viewModel.savedCities.firstIndex(where: { $0.id == viewModel.currentCity.id }) {
+                selectedCityIndex = index
+            }
+        }
         .sheet(isPresented: $showCityPicker) {
             CityPickerSheet(viewModel: viewModel)
         }
+    }
+}
+
+// MARK: - Single City View (when no saved cities yet)
+
+struct SingleCityView: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    @Binding var showCityPicker: Bool
+    @Binding var isUnitButtonPressed: Bool
+    @Binding var refreshID: UUID
+    let colorScheme: ColorScheme
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Header
+                WeatherHeader(
+                    viewModel: viewModel,
+                    isUnitButtonPressed: $isUnitButtonPressed,
+                    colorScheme: colorScheme
+                )
+                
+                // Today's Weather
+                if let today = viewModel.todayWeather {
+                    TodayWeatherCard(
+                        weather: today,
+                        yesterdayWeather: viewModel.yesterdayWeather,
+                        city: viewModel.currentCity,
+                        unit: viewModel.temperatureUnit,
+                        onCityTap: { showCityPicker = true },
+                        colorScheme: colorScheme
+                    )
+                } else if viewModel.isLoading {
+                    LoadingCard(height: 200)
+                }
+                
+                // Temp by Hour Chart
+                if let yesterday = viewModel.yesterdayWeather,
+                   let today = viewModel.todayWeather,
+                   let tomorrow = viewModel.tomorrowWeather {
+                    ThreeDayHourlyChart(
+                        yesterday: yesterday,
+                        today: today,
+                        tomorrow: tomorrow,
+                        colorScheme: colorScheme
+                    )
+                    .id(refreshID)
+                    .padding(.top, -8)
+                }
+                
+                // Yesterday & Tomorrow Row
+                HStack(spacing: 12) {
+                    if let yesterday = viewModel.yesterdayWeather {
+                        SecondaryWeatherCard(weather: yesterday, colorScheme: colorScheme)
+                    } else if viewModel.isLoading {
+                        LoadingCard(height: 140)
+                    }
+                    
+                    if let tomorrow = viewModel.tomorrowWeather {
+                        SecondaryWeatherCard(weather: tomorrow, colorScheme: colorScheme)
+                    } else if viewModel.isLoading {
+                        LoadingCard(height: 140)
+                    }
+                }
+                
+                // My Cities Section - Empty State
+                MyCitiesSection(
+                    viewModel: viewModel,
+                    showCityPicker: $showCityPicker,
+                    colorScheme: colorScheme
+                )
+                
+                // Error message
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding()
+                }
+                
+                Spacer(minLength: 40)
+            }
+            .padding(.horizontal, 16)
+        }
+        .refreshable {
+            await viewModel.fetchWeather()
+        }
+    }
+}
+
+// MARK: - City Weather Page (for swipeable TabView)
+
+struct CityWeatherPage: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    let city: SavedCity
+    @Binding var showCityPicker: Bool
+    @Binding var isUnitButtonPressed: Bool
+    @Binding var refreshID: UUID
+    let colorScheme: ColorScheme
+    
+    // Check if this page is for the current city
+    private var isCurrentCity: Bool {
+        city.id == viewModel.currentCity.id
+    }
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Header
+                WeatherHeader(
+                    viewModel: viewModel,
+                    isUnitButtonPressed: $isUnitButtonPressed,
+                    colorScheme: colorScheme
+                )
+                
+                // Today's Weather - show data only if this is the current city
+                if isCurrentCity, let today = viewModel.todayWeather {
+                    TodayWeatherCard(
+                        weather: today,
+                        yesterdayWeather: viewModel.yesterdayWeather,
+                        city: city,
+                        unit: viewModel.temperatureUnit,
+                        onCityTap: { showCityPicker = true },
+                        colorScheme: colorScheme
+                    )
+                } else if viewModel.isLoading {
+                    LoadingCard(height: 200)
+                } else {
+                    // Show placeholder while loading this city's data
+                    LoadingCard(height: 200)
+                }
+                
+                // Temp by Hour Chart
+                if isCurrentCity,
+                   let yesterday = viewModel.yesterdayWeather,
+                   let today = viewModel.todayWeather,
+                   let tomorrow = viewModel.tomorrowWeather {
+                    ThreeDayHourlyChart(
+                        yesterday: yesterday,
+                        today: today,
+                        tomorrow: tomorrow,
+                        colorScheme: colorScheme
+                    )
+                    .id(refreshID)
+                    .padding(.top, -8)
+                }
+                
+                // Yesterday & Tomorrow Row
+                if isCurrentCity {
+                    HStack(spacing: 12) {
+                        if let yesterday = viewModel.yesterdayWeather {
+                            SecondaryWeatherCard(weather: yesterday, colorScheme: colorScheme)
+                        } else if viewModel.isLoading {
+                            LoadingCard(height: 140)
+                        }
+                        
+                        if let tomorrow = viewModel.tomorrowWeather {
+                            SecondaryWeatherCard(weather: tomorrow, colorScheme: colorScheme)
+                        } else if viewModel.isLoading {
+                            LoadingCard(height: 140)
+                        }
+                    }
+                }
+                
+                // My Cities Section
+                MyCitiesSection(
+                    viewModel: viewModel,
+                    showCityPicker: $showCityPicker,
+                    colorScheme: colorScheme
+                )
+                
+                // Error message
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding()
+                }
+                
+                Spacer(minLength: 40)
+            }
+            .padding(.horizontal, 16)
+        }
+        .refreshable {
+            await viewModel.fetchWeather()
+        }
+    }
+}
+
+// MARK: - Weather Header
+
+struct WeatherHeader: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    @Binding var isUnitButtonPressed: Bool
+    let colorScheme: ColorScheme
+    
+    var body: some View {
+        ZStack {
+            // Centered title with app icon
+            HStack(spacing: 8) {
+                Image("app-icon-small")
+                    .resizable()
+                    .frame(width: 24, height: 24)
+                Text("big numba weatha")
+                    .font(.title2)
+                    .fontWeight(.medium)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
+            }
+            
+            // Right-aligned unit button
+            HStack {
+                Spacer()
+                
+                Button(action: {
+                    Task {
+                        let newUnit: TemperatureUnit = viewModel.temperatureUnit == .celsius ? .fahrenheit : .celsius
+                        await viewModel.setTemperatureUnit(newUnit)
+                    }
+                }) {
+                    Text(viewModel.temperatureUnit.symbol)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(Color.primaryText(for: colorScheme))
+                        .frame(width: 36)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isUnitButtonPressed ? Color.unitButtonPressed(for: colorScheme) : Color.unitButtonBackground(for: colorScheme))
+                        )
+                }
+                .buttonStyle(PressableButtonStyle(isPressed: $isUnitButtonPressed))
+            }
+        }
+        .padding(.top, 8)
+    }
+}
+
+// MARK: - My Cities Section
+
+struct MyCitiesSection: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    @Binding var showCityPicker: Bool
+    let colorScheme: ColorScheme
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with Edit button
+            HStack {
+                Text("My Cities")
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color.primaryText(for: colorScheme))
+                
+                Spacer()
+                
+                if !viewModel.savedCities.isEmpty {
+                    Button(action: {
+                        // Edit functionality to be added later
+                    }) {
+                        Text("Edit")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.editButtonBackground)
+                            .cornerRadius(14)
+                    }
+                }
+            }
+            
+            if viewModel.savedCities.isEmpty {
+                // Empty state - Add a city card
+                Button(action: {
+                    showCityPicker = true
+                }) {
+                    VStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.addCityButtonPurple)
+                            .frame(width: 48, height: 48)
+                            .overlay(
+                                Image(systemName: "plus")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(.white)
+                            )
+                        
+                        Text("Add a city")
+                            .font(.callout)
+                            .fontWeight(.medium)
+                            .foregroundColor(Color.primaryText(for: colorScheme))
+                        
+                        Text("Search for a city to add it to your list")
+                            .font(.subheadline)
+                            .foregroundColor(Color.secondaryText(for: colorScheme))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .background(Color.cardBackground(for: colorScheme))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                // Populated state - Separate card for each city
+                ForEach(viewModel.savedCities) { city in
+                    SavedCityRow(
+                        city: city,
+                        weather: viewModel.savedCityWeather[city.id.uuidString],
+                        colorScheme: colorScheme
+                    )
+                    .background(Color.cardBackground(for: colorScheme))
+                    .cornerRadius(12)
+                    .onTapGesture {
+                        Task {
+                            await viewModel.selectCity(city)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 8)
     }
 }
 
@@ -441,32 +698,75 @@ struct WeatherIcon: View {
     }
 }
 
-// MARK: - Saved City Card (for My Cities section)
+// MARK: - Saved City Row (for My Cities section)
 
-struct SavedCityCard: View {
+struct SavedCityRow: View {
     let city: SavedCity
+    let weather: CityWeatherSummary?
     let colorScheme: ColorScheme
+    
+    /// Formats the current time in the city's timezone
+    private var localTimeString: String {
+        guard let weather = weather else { return "--" }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mma"
+        formatter.amSymbol = "AM"
+        formatter.pmSymbol = "PM"
+        
+        if let timezone = TimeZone(identifier: weather.timezone) {
+            formatter.timeZone = timezone
+        }
+        
+        return formatter.string(from: Date())
+    }
     
     var body: some View {
         HStack {
+            // Left side: City name, time, weather condition
             VStack(alignment: .leading, spacing: 4) {
                 Text(city.name)
-                    .font(.headline)
+                    .font(.callout)
+                    .fontWeight(.bold)
                     .foregroundColor(Color.primaryText(for: colorScheme))
-                Text("--")  // Placeholder for time, would need timezone data
-                    .font(.caption)
+                
+                Text(localTimeString)
+                    .font(.footnote)
                     .foregroundColor(Color.secondaryText(for: colorScheme))
+                
+                if let weather = weather {
+                    Text(weather.condition.displayName)
+                        .font(.footnote)
+                        .foregroundColor(Color.secondaryText(for: colorScheme))
+                }
             }
             
             Spacer()
             
-            Text("--°")  // Placeholder for temperature
-                .font(.largeTitle)
-                .foregroundColor(Color.primaryText(for: colorScheme))
+            // Right side: Current temp and high/low
+            if let weather = weather {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("\(weather.currentTemp)°")
+                        .font(.largeTitle)
+                        .fontWeight(.regular)
+                        .foregroundColor(Color.primaryText(for: colorScheme))
+                    
+                    HStack(spacing: 4) {
+                        Text("\(weather.lowTemp)°")
+                            .foregroundColor(Color.secondaryText(for: colorScheme))
+                        Text("\(weather.highTemp)°")
+                            .foregroundColor(Color.primaryText(for: colorScheme))
+                    }
+                    .font(.footnote)
+                }
+            } else {
+                Text("--°")
+                    .font(.largeTitle)
+                    .foregroundColor(Color.secondaryText(for: colorScheme))
+            }
         }
-        .padding()
-        .background(Color.cardBackground(for: colorScheme))
-        .cornerRadius(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
@@ -519,10 +819,17 @@ struct CityPickerSheet: View {
                 Section(searchText.isEmpty ? "All Cities" : "Results") {
                     ForEach(filteredCities) { city in
                         Button {
-                            // Dismiss immediately, then select city in background
+                            // Dismiss immediately, then add city in background
                             dismiss()
                             Task {
-                                await viewModel.selectCity(city)
+                                // Add current city to My Cities if not already there
+                                let currentCity = viewModel.currentCity
+                                if !viewModel.savedCities.contains(where: { $0.name == currentCity.name && $0.region == currentCity.region }) {
+                                    await viewModel.addCity(currentCity)
+                                }
+                                
+                                // Add new city and switch to it
+                                await viewModel.addCityAndSelect(city)
                             }
                         } label: {
                             HStack {

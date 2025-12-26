@@ -19,6 +19,15 @@ enum TemperatureUnit: String, Codable {
     }
 }
 
+/// Summary weather data for a saved city (shown in My Cities list)
+struct CityWeatherSummary {
+    let currentTemp: Int
+    let highTemp: Int
+    let lowTemp: Int
+    let condition: WeatherCondition
+    let timezone: String  // For displaying local time
+}
+
 /// Represents weather data for a single day
 struct DayWeather: Identifiable {
     let id = UUID()

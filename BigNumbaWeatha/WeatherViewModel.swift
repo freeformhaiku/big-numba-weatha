@@ -14,6 +14,7 @@ class WeatherViewModel: ObservableObject {
     
     @Published var currentCity: SavedCity
     @Published var savedCities: [SavedCity] = []
+    @Published var savedCityWeather: [String: CityWeatherSummary] = [:] // city.id -> weather summary
     
     @Published var temperatureUnit: TemperatureUnit = .celsius
     
@@ -165,6 +166,9 @@ class WeatherViewModel: ObservableObject {
             todayWeather = weather.today
             tomorrowWeather = weather.tomorrow
             
+            // Also fetch weather for saved cities
+            await fetchSavedCitiesWeather()
+            
         } catch is CancellationError {
             // Ignore cancellation - this is normal when refreshing
             print("Weather fetch was cancelled")
@@ -215,19 +219,57 @@ class WeatherViewModel: ObservableObject {
         await fetchWeather()
     }
     
-    /// Adds a city to the saved cities list
-    func addCity(_ city: SavedCity) {
+    /// Adds a city to the saved cities list and fetches its weather
+    func addCity(_ city: SavedCity) async {
         // Don't add duplicates
         guard !savedCities.contains(where: { $0.name == city.name && $0.region == city.region }) else {
             return
         }
         savedCities.append(city)
         saveCitiesToStorage()
+        
+        // Fetch weather for the new city
+        await fetchWeatherForCity(city)
+    }
+    
+    /// Adds a city to My Cities and switches to it
+    func addCityAndSelect(_ city: SavedCity) async {
+        // Add to saved cities if not already there
+        if !savedCities.contains(where: { $0.name == city.name && $0.region == city.region }) {
+            savedCities.append(city)
+            saveCitiesToStorage()
+        }
+        
+        // Switch to the new city
+        currentCity = city
+        saveCurrentCity()
+        await fetchWeather()
+        
+        // Fetch weather for all saved cities
+        await fetchSavedCitiesWeather()
+    }
+    
+    /// Fetches weather summary for a single saved city
+    private func fetchWeatherForCity(_ city: SavedCity) async {
+        do {
+            let summary = try await weatherService.fetchWeatherSummary(for: city, unit: temperatureUnit)
+            savedCityWeather[city.id.uuidString] = summary
+        } catch {
+            print("Failed to fetch weather for \(city.name): \(error)")
+        }
+    }
+    
+    /// Fetches weather for all saved cities
+    func fetchSavedCitiesWeather() async {
+        for city in savedCities {
+            await fetchWeatherForCity(city)
+        }
     }
     
     /// Removes a city from the saved cities list
     func removeCity(_ city: SavedCity) {
         savedCities.removeAll { $0.id == city.id }
+        savedCityWeather.removeValue(forKey: city.id.uuidString)
         saveCitiesToStorage()
     }
     

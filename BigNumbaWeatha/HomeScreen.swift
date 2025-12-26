@@ -79,6 +79,10 @@ struct HomeScreen: View {
     @State private var showCityPicker = false
     @State private var isUnitButtonPressed = false
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.scenePhase) var scenePhase
+    
+    // This ID changes to force the chart to redraw when app becomes active
+    @State private var refreshID = UUID()
     
     var body: some View {
         ZStack {
@@ -152,6 +156,7 @@ struct HomeScreen: View {
                             tomorrow: tomorrow,
                             colorScheme: colorScheme
                         )
+                        .id(refreshID) // Force redraw when app becomes active to update current time dot
                         .padding(.top, -8) // Pull up by 8 points to reduce space between bottom of Today's card and top of temp by hour
                     }
                     
@@ -212,6 +217,12 @@ struct HomeScreen: View {
         .refreshable {
             // Pull to refresh
             await viewModel.fetchWeather()
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                // Force chart to redraw with current time when app becomes active
+                refreshID = UUID()
+            }
         }
         .sheet(isPresented: $showCityPicker) {
             CityPickerSheet(viewModel: viewModel)
@@ -289,7 +300,7 @@ struct TodayWeatherCard: View {
                 .foregroundColor(Color.secondaryText(for: colorScheme))
             
             // Big temperature number (with invisible left spacer to visually center)
-            HStack(alignment: .top, spacing: 2) {
+            HStack(alignment: .top, spacing: 0) {
                 // Invisible spacer matching the °C/°F size
                 Text(unit.symbol)
                     .font(.title2)
@@ -314,6 +325,7 @@ struct TodayWeatherCard: View {
                     .foregroundColor(Color.primaryText(for: colorScheme))
             }
             .font(.title3)
+            .frame(maxWidth: .infinity, alignment: .center)
             
             // Weather condition and comparison
             HStack(spacing: 6) {

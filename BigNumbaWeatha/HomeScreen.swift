@@ -329,27 +329,29 @@ struct MyCitiesSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header with Add button (purple +)
+            // Header with Add button (purple +, only shown when cities exist)
             HStack {
                 Text("My Cities")
                     .font(.callout)
                     .fontWeight(.semibold)
                     .foregroundColor(Color.primaryText(for: colorScheme))
-                
+
                 Spacer()
-                
-                // Purple + button to add city
-                Button(action: {
-                    showCityPicker = true
-                }) {
-                    Circle()
-                        .fill(Color.addCityButtonPurple)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            Image(systemName: "plus")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                        )
+
+                // Purple + button to add city (hidden in empty state since empty state has its own add button)
+                if !viewModel.savedCities.isEmpty {
+                    Button(action: {
+                        showCityPicker = true
+                    }) {
+                        Circle()
+                            .fill(Color.addCityButtonPurple)
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                Image(systemName: "plus")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+                    }
                 }
             }
             

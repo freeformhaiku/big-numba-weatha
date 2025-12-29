@@ -354,6 +354,13 @@ class WeatherViewModel: ObservableObject {
     func removeCity(_ city: SavedCity) {
         savedCities.removeAll { $0.id == city.id }
         savedCityWeather.removeValue(forKey: city.id.uuidString)
+
+        // If only the current city remains in savedCities, remove it too
+        // This returns to the "single city" empty state
+        if savedCities.count == 1 && savedCities.first?.id == currentCity.id {
+            savedCities.removeAll()
+        }
+
         saveCitiesToStorage()
     }
     

@@ -93,8 +93,8 @@ struct HomeScreen: View {
     // This ID changes to force the chart to redraw when app becomes active
     @State private var refreshID = UUID()
     
-    // Track which city index is selected for swiping
-    @State private var selectedCityIndex: Int = 0
+    // Track which city is selected by ID (not index) for stability during reorder
+    @State private var selectedCityId: UUID?
     
     var body: some View {
         ZStack {
@@ -102,20 +102,12 @@ struct HomeScreen: View {
             Color.screenBackground(for: colorScheme)
                 .ignoresSafeArea()
             
-            if viewModel.savedCities.isEmpty {
-                // No saved cities yet - show single city view (non-swipeable)
-                SingleCityView(
-                    viewModel: viewModel,
-                    showCityPicker: $showCityPicker,
-                    isUnitButtonPressed: $isUnitButtonPressed,
-                    refreshID: $refreshID,
-                    colorScheme: colorScheme
-                )
-            } else {
-                // Multiple cities - swipeable TabView
-                TabView(selection: $selectedCityIndex) {
-                    ForEach(Array(viewModel.savedCities.enumerated()), id: \.element.id) { index, city in
-                        CityWeatherPage(
+            if viewModel.savedCities.count > 1 {
+                // Multiple cities - use TabView for smooth horizontal swiping
+                // Use city ID as selection for stability during reordering
+                TabView(selection: $selectedCityId) {
+                    ForEach(viewModel.savedCities) { city in
+                        CityContentView(
                             viewModel: viewModel,
                             city: city,
                             showCityPicker: $showCityPicker,
@@ -123,45 +115,62 @@ struct HomeScreen: View {
                             refreshID: $refreshID,
                             colorScheme: colorScheme
                         )
-                        .tag(index)
+                        .tag(city.id as UUID?)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .onChange(of: selectedCityIndex) { newIndex in
+                .onChange(of: selectedCityId) { newId in
                     // When user swipes to a different city, update the viewModel
-                    if newIndex >= 0 && newIndex < viewModel.savedCities.count {
-                        let city = viewModel.savedCities[newIndex]
-                        if city.id != viewModel.currentCity.id {
-                            Task {
-                                await viewModel.selectCity(city)
-                            }
+                    if let newId = newId,
+                       let city = viewModel.savedCities.first(where: { $0.id == newId }),
+                       city.id != viewModel.currentCity.id {
+                        Task {
+                            await viewModel.selectCity(city)
                         }
                     }
                 }
+            } else {
+                // Single city or no saved cities - regular scroll view
+                CityContentView(
+                    viewModel: viewModel,
+                    city: viewModel.currentCity,
+                    showCityPicker: $showCityPicker,
+                    isUnitButtonPressed: $isUnitButtonPressed,
+                    refreshID: $refreshID,
+                    colorScheme: colorScheme
+                )
             }
         }
         .task {
-            // Fetch weather when the view appears
             await viewModel.fetchWeather()
+            // Fetch fresh data for all saved cities in parallel
+            await viewModel.fetchAllCitiesFullWeather()
+            // Set initial selected city
+            selectedCityId = viewModel.currentCity.id
         }
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
-                // Force chart to redraw with current time when app becomes active
                 refreshID = UUID()
-            }
-        }
-        .onChange(of: viewModel.currentCity.id) { _ in
-            // Sync selectedCityIndex when currentCity changes (e.g., from My Cities tap)
-            if let index = viewModel.savedCities.firstIndex(where: { $0.id == viewModel.currentCity.id }) {
-                if selectedCityIndex != index {
-                    selectedCityIndex = index
+                // Refresh all cities when app becomes active
+                Task {
+                    await viewModel.fetchAllCitiesFullWeather()
                 }
             }
         }
-        .onChange(of: viewModel.savedCities.count) { _ in
-            // When cities are added, update the selected index to match current city
-            if let index = viewModel.savedCities.firstIndex(where: { $0.id == viewModel.currentCity.id }) {
-                selectedCityIndex = index
+        .onChange(of: viewModel.currentCity.id) { newId in
+            // Sync selectedCityId when currentCity changes (e.g., from My Cities tap)
+            if selectedCityId != newId {
+                withAnimation {
+                    selectedCityId = newId
+                }
+            }
+        }
+        .onChange(of: viewModel.savedCities.count) { newCount in
+            // When cities are added/removed, ensure we have a valid selection
+            if newCount > 0 {
+                if selectedCityId == nil || !viewModel.savedCities.contains(where: { $0.id == selectedCityId }) {
+                    selectedCityId = viewModel.currentCity.id
+                }
             }
         }
         .sheet(isPresented: $showCityPicker) {
@@ -170,14 +179,20 @@ struct HomeScreen: View {
     }
 }
 
-// MARK: - Single City View (when no saved cities yet)
+// MARK: - City Content View (the scrollable content for one city)
 
-struct SingleCityView: View {
+struct CityContentView: View {
     @ObservedObject var viewModel: WeatherViewModel
+    let city: SavedCity
     @Binding var showCityPicker: Bool
     @Binding var isUnitButtonPressed: Bool
     @Binding var refreshID: UUID
     let colorScheme: ColorScheme
+    
+    // Get this city's weather from cache
+    private var cityWeather: CityFullWeather? {
+        viewModel.getCachedWeather(for: city)
+    }
     
     var body: some View {
         ScrollView {
@@ -190,124 +205,25 @@ struct SingleCityView: View {
                 )
                 
                 // Today's Weather
-                if let today = viewModel.todayWeather {
+                if let weather = cityWeather {
                     TodayWeatherCard(
-                        weather: today,
-                        yesterdayWeather: viewModel.yesterdayWeather,
-                        city: viewModel.currentCity,
-                        unit: viewModel.temperatureUnit,
-                        onCityTap: { showCityPicker = true },
-                        colorScheme: colorScheme
-                    )
-                } else if viewModel.isLoading {
-                    LoadingCard(height: 200)
-                }
-                
-                // Temp by Hour Chart
-                if let yesterday = viewModel.yesterdayWeather,
-                   let today = viewModel.todayWeather,
-                   let tomorrow = viewModel.tomorrowWeather {
-                    ThreeDayHourlyChart(
-                        yesterday: yesterday,
-                        today: today,
-                        tomorrow: tomorrow,
-                        colorScheme: colorScheme
-                    )
-                    .id(refreshID)
-                    .padding(.top, -8)
-                }
-                
-                // Yesterday & Tomorrow Row
-                HStack(spacing: 12) {
-                    if let yesterday = viewModel.yesterdayWeather {
-                        SecondaryWeatherCard(weather: yesterday, colorScheme: colorScheme)
-                    } else if viewModel.isLoading {
-                        LoadingCard(height: 140)
-                    }
-                    
-                    if let tomorrow = viewModel.tomorrowWeather {
-                        SecondaryWeatherCard(weather: tomorrow, colorScheme: colorScheme)
-                    } else if viewModel.isLoading {
-                        LoadingCard(height: 140)
-                    }
-                }
-                
-                // My Cities Section - Empty State
-                MyCitiesSection(
-                    viewModel: viewModel,
-                    showCityPicker: $showCityPicker,
-                    colorScheme: colorScheme
-                )
-                
-                // Error message
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                        .padding()
-                }
-                
-                Spacer(minLength: 40)
-            }
-            .padding(.horizontal, 16)
-        }
-        .refreshable {
-            await viewModel.fetchWeather()
-        }
-    }
-}
-
-// MARK: - City Weather Page (for swipeable TabView)
-
-struct CityWeatherPage: View {
-    @ObservedObject var viewModel: WeatherViewModel
-    let city: SavedCity
-    @Binding var showCityPicker: Bool
-    @Binding var isUnitButtonPressed: Bool
-    @Binding var refreshID: UUID
-    let colorScheme: ColorScheme
-    
-    // Check if this page is for the current city
-    private var isCurrentCity: Bool {
-        city.id == viewModel.currentCity.id
-    }
-    
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // Header
-                WeatherHeader(
-                    viewModel: viewModel,
-                    isUnitButtonPressed: $isUnitButtonPressed,
-                    colorScheme: colorScheme
-                )
-                
-                // Today's Weather - show data only if this is the current city
-                if isCurrentCity, let today = viewModel.todayWeather {
-                    TodayWeatherCard(
-                        weather: today,
-                        yesterdayWeather: viewModel.yesterdayWeather,
+                        weather: weather.today,
+                        yesterdayWeather: weather.yesterday,
                         city: city,
                         unit: viewModel.temperatureUnit,
                         onCityTap: { showCityPicker = true },
                         colorScheme: colorScheme
                     )
-                } else if viewModel.isLoading {
-                    LoadingCard(height: 200)
                 } else {
-                    // Show placeholder while loading this city's data
                     LoadingCard(height: 200)
                 }
                 
                 // Temp by Hour Chart
-                if isCurrentCity,
-                   let yesterday = viewModel.yesterdayWeather,
-                   let today = viewModel.todayWeather,
-                   let tomorrow = viewModel.tomorrowWeather {
+                if let weather = cityWeather {
                     ThreeDayHourlyChart(
-                        yesterday: yesterday,
-                        today: today,
-                        tomorrow: tomorrow,
+                        yesterday: weather.yesterday,
+                        today: weather.today,
+                        tomorrow: weather.tomorrow,
                         colorScheme: colorScheme
                     )
                     .id(refreshID)
@@ -315,19 +231,15 @@ struct CityWeatherPage: View {
                 }
                 
                 // Yesterday & Tomorrow Row
-                if isCurrentCity {
+                if let weather = cityWeather {
                     HStack(spacing: 12) {
-                        if let yesterday = viewModel.yesterdayWeather {
-                            SecondaryWeatherCard(weather: yesterday, colorScheme: colorScheme)
-                        } else if viewModel.isLoading {
-                            LoadingCard(height: 140)
-                        }
-                        
-                        if let tomorrow = viewModel.tomorrowWeather {
-                            SecondaryWeatherCard(weather: tomorrow, colorScheme: colorScheme)
-                        } else if viewModel.isLoading {
-                            LoadingCard(height: 140)
-                        }
+                        SecondaryWeatherCard(weather: weather.yesterday, colorScheme: colorScheme)
+                        SecondaryWeatherCard(weather: weather.tomorrow, colorScheme: colorScheme)
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        LoadingCard(height: 140)
+                        LoadingCard(height: 140)
                     }
                 }
                 
@@ -351,11 +263,15 @@ struct CityWeatherPage: View {
             .padding(.horizontal, 16)
         }
         .refreshable {
-            await viewModel.fetchWeather()
+            // Force refetch for this city
+            await viewModel.fetchFullWeatherForCity(city, forceRefresh: true)
+        }
+        .task {
+            // Fetch weather for this city if not cached (data already fetched on app open)
+            await viewModel.fetchFullWeatherForCity(city, forceRefresh: false)
         }
     }
 }
-
 // MARK: - Weather Header
 
 struct WeatherHeader: View {
@@ -411,12 +327,9 @@ struct MyCitiesSection: View {
     @Binding var showCityPicker: Bool
     let colorScheme: ColorScheme
     
-    @State private var isEditMode = false
-    @State private var cityPendingDelete: UUID? = nil  // Track which city is showing delete confirmation
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header with Edit/Done button
+            // Header with Add button (purple +)
             HStack {
                 Text("My Cities")
                     .font(.callout)
@@ -425,25 +338,18 @@ struct MyCitiesSection: View {
                 
                 Spacer()
                 
-                if !viewModel.savedCities.isEmpty {
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isEditMode.toggle()
-                            // Reset pending delete when exiting edit mode
-                            if !isEditMode {
-                                cityPendingDelete = nil
-                            }
-                        }
-                    }) {
-                        Text(isEditMode ? "Done" : "Edit")
-                            .font(.footnote)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.editButtonBackground)
-                            .cornerRadius(14)
-                    }
+                // Purple + button to add city
+                Button(action: {
+                    showCityPicker = true
+                }) {
+                    Circle()
+                        .fill(Color.addCityButtonPurple)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                        )
                 }
             }
             
@@ -478,175 +384,258 @@ struct MyCitiesSection: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             } else {
-                // Populated state - City cards with edit mode support
-                ForEach(viewModel.savedCities) { city in
-                    EditableCityRow(
-                        city: city,
-                        weather: viewModel.savedCityWeather[city.id.uuidString],
-                        colorScheme: colorScheme,
-                        isEditMode: isEditMode,
-                        isPendingDelete: cityPendingDelete == city.id,
-                        onTap: {
-                            if !isEditMode {
-                                Task {
-                                    await viewModel.selectCity(city)
-                                }
-                            }
-                        },
-                        onDeleteButtonTap: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                if cityPendingDelete == city.id {
-                                    // Already showing delete, hide it
-                                    cityPendingDelete = nil
-                                } else {
-                                    // Show delete for this city
-                                    cityPendingDelete = city.id
-                                }
-                            }
-                        },
-                        onConfirmDelete: {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                viewModel.removeCity(city)
-                                cityPendingDelete = nil
-                                // Exit edit mode if no more cities
-                                if viewModel.savedCities.isEmpty {
-                                    isEditMode = false
-                                }
-                            }
-                        },
-                        onCancelDelete: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                cityPendingDelete = nil
-                            }
-                        }
-                    )
-                }
-                
-                // Add a city button (only in edit mode)
-                if isEditMode {
-                    Button(action: {
-                        showCityPicker = true
-                    }) {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color.addCityButtonPurple)
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.white)
-                                )
-                            
-                            Text("Add a city")
-                                .font(.callout)
-                                .fontWeight(.bold)
-                                .foregroundColor(Color.primaryText(for: colorScheme))
-                            
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(Color.cardBackground(for: colorScheme))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+                // Populated state - Swipeable and reorderable city cards
+                ReorderableCityList(
+                    viewModel: viewModel,
+                    colorScheme: colorScheme
+                )
             }
         }
         .padding(.top, 8)
     }
 }
 
-// MARK: - Editable City Row
+// MARK: - Reorderable City List
 
-struct EditableCityRow: View {
+struct ReorderableCityList: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    let colorScheme: ColorScheme
+    
+    // Local copy of cities for visual reordering without triggering parent updates
+    @State private var localCities: [SavedCity] = []
+    @State private var draggingCityId: UUID? = nil
+    @State private var dragOffset: CGFloat = 0
+    @State private var originalIndex: Int? = nil
+    @State private var currentHoverIndex: Int? = nil
+    
+    private let rowHeight: CGFloat = 97 // 85 height + 12 spacing
+    
+    // Use local cities during drag, otherwise use viewModel
+    private var displayCities: [SavedCity] {
+        draggingCityId != nil ? localCities : viewModel.savedCities
+    }
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(Array(displayCities.enumerated()), id: \.element.id) { index, city in
+                let isDragging = draggingCityId == city.id
+                
+                // Calculate visual offset for non-dragged items to make room
+                let visualOffset: CGFloat = {
+                    guard let dragId = draggingCityId,
+                          let origIdx = originalIndex,
+                          let hoverIdx = currentHoverIndex,
+                          city.id != dragId else {
+                        return 0
+                    }
+                    
+                    // If dragging down (origIdx < hoverIdx)
+                    if origIdx < hoverIdx {
+                        // Items between original and hover should move up
+                        if index > origIdx && index <= hoverIdx {
+                            return -rowHeight
+                        }
+                    }
+                    // If dragging up (origIdx > hoverIdx)
+                    else if origIdx > hoverIdx {
+                        // Items between hover and original should move down
+                        if index >= hoverIdx && index < origIdx {
+                            return rowHeight
+                        }
+                    }
+                    return 0
+                }()
+                
+                SwipeableCityRow(
+                    city: city,
+                    weather: viewModel.savedCityWeather[city.id.uuidString],
+                    colorScheme: colorScheme,
+                    isDragging: isDragging,
+                    onTap: {
+                        Task {
+                            await viewModel.selectCity(city)
+                        }
+                    },
+                    onDelete: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            viewModel.removeCity(city)
+                        }
+                    }
+                )
+                .offset(y: isDragging ? dragOffset : visualOffset)
+                .zIndex(isDragging ? 100 : 0)
+                .scaleEffect(isDragging ? 1.03 : 1.0)
+                .shadow(color: isDragging ? Color.black.opacity(0.3) : Color.clear, radius: isDragging ? 8 : 0)
+                .animation(isDragging ? nil : .easeInOut(duration: 0.2), value: visualOffset)
+                .animation(.easeInOut(duration: 0.15), value: isDragging)
+                .gesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .sequenced(before: DragGesture(minimumDistance: 0))
+                        .onChanged { value in
+                            switch value {
+                            case .first(true):
+                                // Long press recognized
+                                break
+                            case .second(true, let drag):
+                                if draggingCityId == nil {
+                                    // Start dragging - copy current cities to local state
+                                    localCities = viewModel.savedCities
+                                    draggingCityId = city.id
+                                    originalIndex = index
+                                    currentHoverIndex = index
+                                    // Haptic feedback
+                                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                    impactFeedback.impactOccurred()
+                                }
+                                
+                                if let drag = drag, let origIdx = originalIndex {
+                                    dragOffset = drag.translation.height
+                                    
+                                    // Calculate which index we're hovering over
+                                    let draggedRows = Int(round(drag.translation.height / rowHeight))
+                                    let newHoverIndex = max(0, min(localCities.count - 1, origIdx + draggedRows))
+                                    
+                                    if newHoverIndex != currentHoverIndex {
+                                        currentHoverIndex = newHoverIndex
+                                        // Light haptic when hover index changes
+                                        let lightFeedback = UIImpactFeedbackGenerator(style: .light)
+                                        lightFeedback.impactOccurred()
+                                    }
+                                }
+                            default:
+                                break
+                            }
+                        }
+                        .onEnded { _ in
+                            // Perform the actual move when dropped
+                            if let origIdx = originalIndex,
+                               let hoverIdx = currentHoverIndex,
+                               origIdx != hoverIdx {
+                                // Commit the move to viewModel
+                                viewModel.moveCity(from: origIdx, to: hoverIdx)
+                            }
+                            
+                            // Reset state
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                draggingCityId = nil
+                                dragOffset = 0
+                                originalIndex = nil
+                                currentHoverIndex = nil
+                                localCities = []
+                            }
+                        }
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Swipeable City Row
+
+struct SwipeableCityRow: View {
     let city: SavedCity
     let weather: CityWeatherSummary?
     let colorScheme: ColorScheme
-    let isEditMode: Bool
-    let isPendingDelete: Bool
+    let isDragging: Bool
     let onTap: () -> Void
-    let onDeleteButtonTap: () -> Void
-    let onConfirmDelete: () -> Void
-    let onCancelDelete: () -> Void
+    let onDelete: () -> Void
+    
+    @State private var offset: CGFloat = 0
+    @State private var isSwiping = false
+    
+    private let deleteButtonWidth: CGFloat = 80
+    private let deleteThreshold: CGFloat = UIScreen.main.bounds.width / 2
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Delete button (red circle with minus) - only in edit mode
-            if isEditMode {
-                Button(action: onDeleteButtonTap) {
-                    Circle()
-                        .fill(Color.deleteButtonRed)
-                        .frame(width: 24, height: 24)
-                        .overlay(
-                            Rectangle()
-                                .fill(.white)
-                                .frame(width: 12, height: 3)
-                                .cornerRadius(1)
-                        )
+        ZStack(alignment: .trailing) {
+            // Delete button background (only visible when swiping)
+            if isSwiping || offset < 0 {
+                HStack {
+                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            onDelete()
+                        }
+                    }) {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.deleteButtonRed)
+                            .frame(width: max(-offset, 0))
+                            .overlay(
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white)
+                                    .opacity(-offset > 40 ? 1 : 0) // Only show icon when enough space
+                            )
+                    }
+                    .disabled(-offset < 40) // Disable button when too small
                 }
-                .padding(.trailing, 12)
-                .transition(.opacity.combined(with: .move(edge: .leading)))
             }
             
-            // City card content
-            ZStack {
-                // Background tap area to cancel delete
-                if isPendingDelete {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onCancelDelete()
-                        }
-                }
-                
-                HStack(spacing: 0) {
-                    // Main content
-                    SavedCityRowContent(
-                        city: city,
-                        weather: weather,
-                        colorScheme: colorScheme
-                    )
-                    .frame(maxWidth: .infinity)
-                    
-                    // Drag handle (only in edit mode, not when delete is pending)
-                    if isEditMode && !isPendingDelete {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Color.secondaryText(for: colorScheme))
-                            .padding(.horizontal, 12)
-                    }
-                    
-                    // Delete confirmation button (trash icon)
-                    if isPendingDelete {
-                        Button(action: onConfirmDelete) {
-                            RoundedRectangle(cornerRadius: 0)
-                                .fill(Color.deleteButtonRed)
-                                .frame(width: 70)
-                                .overlay(
-                                    Image(systemName: "trash.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(.white)
-                                )
-                        }
-                        .cornerRadius(12, corners: [.topRight, .bottomRight])
-                        .transition(.move(edge: .trailing))
-                    }
-                }
-            }
+            // Main card content
+            SavedCityRowContent(
+                city: city,
+                weather: weather,
+                colorScheme: colorScheme
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: 85)
             .background(Color.cardBackground(for: colorScheme))
             .cornerRadius(12)
+            .offset(x: offset)
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        // Only allow horizontal swipe when not being dragged for reorder
+                        guard !isDragging else { return }
+                        
+                        // Only allow left swipe (negative translation)
+                        if value.translation.width < 0 {
+                            isSwiping = true
+                            offset = value.translation.width
+                        }
+                    }
+                    .onEnded { value in
+                        guard !isDragging else { return }
+                        
+                        let swipeDistance = -value.translation.width
+                        
+                        if swipeDistance > deleteThreshold {
+                            // Swiped past midpoint - delete immediately
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                offset = -UIScreen.main.bounds.width
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                onDelete()
+                            }
+                        } else if swipeDistance > deleteButtonWidth {
+                            // Swiped enough to show delete button - keep it visible
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                offset = -deleteButtonWidth
+                            }
+                        } else {
+                            // Not enough swipe - snap back
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                offset = 0
+                                isSwiping = false
+                            }
+                        }
+                    }
+            )
             .onTapGesture {
-                if !isEditMode && !isPendingDelete {
+                if offset < 0 {
+                    // Tap to dismiss delete button
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        offset = 0
+                        isSwiping = false
+                    }
+                } else {
                     onTap()
-                } else if isPendingDelete {
-                    onCancelDelete()
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isPendingDelete)
-        .animation(.easeInOut(duration: 0.25), value: isEditMode)
+        .frame(height: 85)
+        .contentShape(Rectangle())
     }
 }
 

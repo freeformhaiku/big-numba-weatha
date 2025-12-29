@@ -1,6 +1,13 @@
 import Foundation
 import SwiftUI
 
+/// Full weather data for a city (yesterday, today, tomorrow)
+struct CityFullWeather {
+    let yesterday: DayWeather
+    let today: DayWeather
+    let tomorrow: DayWeather
+}
+
 /// ViewModel that manages weather data and app state
 /// Uses @MainActor to ensure UI updates happen on the main thread
 @MainActor
@@ -11,6 +18,9 @@ class WeatherViewModel: ObservableObject {
     @Published var yesterdayWeather: DayWeather?
     @Published var todayWeather: DayWeather?
     @Published var tomorrowWeather: DayWeather?
+    
+    // Per-city full weather data cache
+    @Published var cityWeatherCache: [UUID: CityFullWeather] = [:]
     
     @Published var currentCity: SavedCity
     @Published var savedCities: [SavedCity] = []
@@ -166,6 +176,13 @@ class WeatherViewModel: ObservableObject {
             todayWeather = weather.today
             tomorrowWeather = weather.tomorrow
             
+            // Cache this city's full weather data
+            cityWeatherCache[currentCity.id] = CityFullWeather(
+                yesterday: weather.yesterday,
+                today: weather.today,
+                tomorrow: weather.tomorrow
+            )
+            
             // Also fetch weather for saved cities
             await fetchSavedCitiesWeather()
             
@@ -183,12 +200,20 @@ class WeatherViewModel: ObservableObject {
         isLoading = false
     }
     
+    /// Gets cached weather for a city, or nil if not cached
+    func getCachedWeather(for city: SavedCity) -> CityFullWeather? {
+        return cityWeatherCache[city.id]
+    }
+    
     /// Changes the temperature unit and refetches weather
     func setTemperatureUnit(_ unit: TemperatureUnit) async {
         // Don't update the displayed unit yet - wait for data to load
         guard !isLoading else { return }
         
         isLoading = true
+        
+        // Clear all cached weather since unit is changing
+        cityWeatherCache.removeAll()
         
         do {
             let weather = try await weatherService.fetchWeather(for: currentCity, unit: unit)
@@ -199,6 +224,16 @@ class WeatherViewModel: ObservableObject {
             tomorrowWeather = weather.tomorrow
             temperatureUnit = unit
             saveTemperatureUnit()
+            
+            // Cache this city's data
+            cityWeatherCache[currentCity.id] = CityFullWeather(
+                yesterday: weather.yesterday,
+                today: weather.today,
+                tomorrow: weather.tomorrow
+            )
+            
+            // Refetch all saved cities with new unit
+            await fetchSavedCitiesWeather()
             
         } catch is CancellationError {
             print("Weather fetch was cancelled")
@@ -216,7 +251,16 @@ class WeatherViewModel: ObservableObject {
     func selectCity(_ city: SavedCity) async {
         currentCity = city
         saveCurrentCity()
-        await fetchWeather()
+        // Fetch weather if not already cached
+        if cityWeatherCache[city.id] == nil {
+            await fetchFullWeatherForCity(city, forceRefresh: false)
+        }
+        // Update the main weather properties for backward compatibility
+        if let cached = cityWeatherCache[city.id] {
+            yesterdayWeather = cached.yesterday
+            todayWeather = cached.today
+            tomorrowWeather = cached.tomorrow
+        }
     }
     
     /// Adds a city to the saved cities list and fetches its weather
@@ -265,11 +309,64 @@ class WeatherViewModel: ObservableObject {
             await fetchWeatherForCity(city)
         }
     }
+
+    /// Fetches full weather data for ALL saved cities (including hourly data)
+    /// Called on app open to ensure fresh data for all cities
+    func fetchAllCitiesFullWeather() async {
+        // Collect all cities to fetch (current + saved, avoiding duplicates)
+        var citiesToFetch = savedCities
+        if !citiesToFetch.contains(where: { $0.id == currentCity.id }) {
+            citiesToFetch.append(currentCity)
+        }
+
+        await withTaskGroup(of: Void.self) { group in
+            for city in citiesToFetch {
+                group.addTask {
+                    await self.fetchFullWeatherForCity(city, forceRefresh: true)
+                }
+            }
+        }
+    }
+
+    /// Fetches full weather data for a specific city (used by city pages)
+    /// - Parameters:
+    ///   - city: The city to fetch weather for
+    ///   - forceRefresh: If true, ignores cache and fetches fresh data
+    func fetchFullWeatherForCity(_ city: SavedCity, forceRefresh: Bool) async {
+        // Check if we already have cached data (unless forcing refresh)
+        if !forceRefresh && cityWeatherCache[city.id] != nil {
+            return
+        }
+
+        do {
+            let weather = try await weatherService.fetchWeather(for: city, unit: temperatureUnit)
+            cityWeatherCache[city.id] = CityFullWeather(
+                yesterday: weather.yesterday,
+                today: weather.today,
+                tomorrow: weather.tomorrow
+            )
+        } catch {
+            print("Failed to fetch weather for \(city.name): \(error)")
+        }
+    }
     
     /// Removes a city from the saved cities list
     func removeCity(_ city: SavedCity) {
         savedCities.removeAll { $0.id == city.id }
         savedCityWeather.removeValue(forKey: city.id.uuidString)
+        saveCitiesToStorage()
+    }
+    
+    /// Moves a city from one position to another (for reordering)
+    func moveCity(from source: Int, to destination: Int) {
+        guard source != destination,
+              source >= 0, source < savedCities.count,
+              destination >= 0, destination < savedCities.count else {
+            return
+        }
+        
+        let city = savedCities.remove(at: source)
+        savedCities.insert(city, at: destination)
         saveCitiesToStorage()
     }
     

@@ -946,12 +946,19 @@ struct CityPickerSheet: View {
     @ObservedObject var viewModel: WeatherViewModel
     @Environment(\.dismiss) var dismiss
     @State private var searchText = ""
-    
-    /// Filter preset cities based on search text
-    var filteredCities: [SavedCity] {
-        if searchText.isEmpty {
+    @State private var geocodedCities: [SavedCity] = []
+    @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
+
+    /// Cities to display - geocoded results for searches, preset cities otherwise
+    var displayedCities: [SavedCity] {
+        if searchText.count >= 2 {
+            // Use geocoded results for actual searches
+            return geocodedCities
+        } else if searchText.isEmpty {
             return WeatherViewModel.presetCities
         } else {
+            // Single character - filter preset cities
             return WeatherViewModel.presetCities.filter { city in
                 city.name.localizedCaseInsensitiveContains(searchText) ||
                 city.country.localizedCaseInsensitiveContains(searchText) ||
@@ -965,13 +972,24 @@ struct CityPickerSheet: View {
             List {
                 // Search field
                 Section {
-                    TextField("Search cities...", text: $searchText)
-                        .textFieldStyle(.plain)
+                    HStack {
+                        TextField("Search cities...", text: $searchText)
+                            .textFieldStyle(.plain)
+                        if isSearching {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+                    }
                 }
-                
-                // Cities list (filtered by search)
-                Section(searchText.isEmpty ? "All Cities" : "Results") {
-                    ForEach(filteredCities) { city in
+
+                // Cities list (geocoded or preset)
+                Section(searchText.count >= 2 ? "Search Results" : (searchText.isEmpty ? "All Cities" : "Results")) {
+                    if displayedCities.isEmpty && !isSearching {
+                        Text("No cities found")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    }
+                    ForEach(displayedCities) { city in
                         Button {
                             // Dismiss immediately, then add city in background
                             dismiss()
@@ -1017,6 +1035,36 @@ struct CityPickerSheet: View {
                     Button("Done") {
                         dismiss()
                     }
+                }
+            }
+            .onChange(of: searchText) { _, newValue in
+                // Cancel any previous search
+                searchTask?.cancel()
+
+                // Only search via API if 2+ characters
+                guard newValue.count >= 2 else {
+                    geocodedCities = []
+                    isSearching = false
+                    return
+                }
+
+                // Debounced API search
+                searchTask = Task {
+                    isSearching = true
+
+                    // Debounce: wait 300ms before searching
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+
+                    // Check if cancelled
+                    guard !Task.isCancelled else { return }
+
+                    // Perform geocoding search
+                    let results = await viewModel.searchCities(query: newValue)
+
+                    // Update UI on main thread
+                    guard !Task.isCancelled else { return }
+                    geocodedCities = results
+                    isSearching = false
                 }
             }
         }
